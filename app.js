@@ -190,6 +190,17 @@ function benchRets(u = state.universe) { return mon(u, 'base').map(r => r.bench_
 function portRets(u = state.universe, v = state.variant) {
   return sized(u, v) ? amountSeries(u, v).rets : mon(u, v).map(r => r.port_ret);
 }
+
+/* Month counts, off whichever series is in force, so they follow the sizing mode. */
+function monthTally(u = state.universe, v = state.variant) {
+  const p = portRets(u, v), b = benchRets(u);
+  let positive = 0, beat = 0;
+  p.forEach((r, i) => {
+    if (r > 0) positive++;
+    if (r > b[i]) beat++;
+  });
+  return { positive, beat, total: p.length };
+}
 /* The current book, with sectors re-derived from SECTOR_MAP (built from the price
    files' own Industry column). The constituent lists only cover the Nifty 500, so
    without this most of the All-Indices book reads "Other / Unclassified". */
@@ -503,16 +514,24 @@ function renderTab(tab) {
 function renderOverview() {
   const r = run();
 
+  const t = monthTally();
   const kpis = [
     { label: 'CAGR', value: pct(r.cagr, 2), color: 'var(--emerald)',
       sub: `${r.bench_name} ${pct(r.bench_cagr, 2)}` },
     { label: 'Alpha (ann.)', value: spct(r.alpha_ann, 2),
       color: r.alpha_ann >= 0 ? 'var(--emerald)' : 'var(--rose)', sub: `vs ${r.bench_name}` },
-    { label: 'Sharpe', value: num(r.sharpe), color: 'var(--cyan)', sub: `Sortino ${num(r.sortino)}` },
+    // The engine's forecast at formation — made before any rupee figure, so it
+    // does not move with the Portfolio Size setting.
+    { label: 'Ex-Ante Sharpe', value: num(r.exante_sharpe_avg), color: 'var(--cyan)',
+      sub: `latest ${num(r.exante_sharpe_current)} · realised ${num(r.sharpe)}` },
     { label: 'Max Drawdown', value: pct(r.max_dd, 2), color: 'var(--rose)',
       sub: `${r.dd_duration} mo underwater` },
     { label: 'Volatility', value: pct(r.vol, 2), color: 'var(--gold)', sub: `Beta ${num(r.beta)}` },
-    { label: 'Win Rate', value: pct(r.win_rate, 1), color: 'var(--emerald)', sub: `${r.months} months` }
+    { label: 'Positive Months', value: `${t.positive} / ${t.total}`, color: 'var(--emerald)',
+      sub: `${pct(t.positive / t.total, 1)} of months in profit` },
+    { label: `Beat ${r.bench_name}`, value: `${t.beat} / ${t.total}`,
+      color: t.beat * 2 >= t.total ? 'var(--emerald)' : 'var(--rose)',
+      sub: `${pct(t.beat / t.total, 1)} of months outperformed` }
   ];
   if (r.sized) {
     kpis.push({
