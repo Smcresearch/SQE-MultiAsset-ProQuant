@@ -627,12 +627,14 @@ function openHeatModal(monthStr) {
       <div style="border:1px solid var(--border);border-radius:.5rem;overflow:hidden">
         <table class="data-table mini-table">
           <colgroup>
-            <col style="width:4%"><col style="width:15%"><col style="width:18%"><col style="width:9%"><col style="width:10%"><col style="width:11%"><col style="width:12%"><col style="width:7%"><col style="width:14%">
+            <col style="width:4%"><col style="width:14%"><col style="width:16%"><col style="width:8%"><col style="width:8%"><col style="width:9%"><col style="width:9%"><col style="width:11%"><col style="width:7%"><col style="width:14%">
           </colgroup>
           <thead><tr>
-            <th>#</th><th>Stock</th><th>Sector</th><th>Weight</th>
+            <th>#</th><th>Stock</th><th>Sector</th>
+            <th title="Target weight in the model book.">Weight</th>
+            <th title="What that weight actually becomes once your amount is rounded to whole shares, with a one-share floor.">Actual</th>
             <th title="Price move across the trade month: open to close.">Return</th>
-            <th title="The position's P&amp;L this month as a share of capital. The engine carries positions at average cost, so gains realised on an older position count here — which is why this is not simply Weight × Return.">Contrib</th>
+            <th title="Your achieved weight × the stock's return — its contribution to the return on YOUR amount.">Contrib</th>
             <th title="The position's average cost — the basis quantities are sized against.">Avg Buy Price</th>
             <th>Qty</th><th>Amount</th>
           </tr></thead>
@@ -641,35 +643,43 @@ function openHeatModal(monthStr) {
               <td class="text-muted mono" style="font-size:.65rem">${i + 1}</td>
               <td class="mono" style="font-weight:700;color:${h.m ? '#f4b942' : 'inherit'}">${h.s}</td>
               <td class="text-muted" style="font-size:.68rem">${h.sec}</td>
-              <td class="mono">${h.w != null ? h.w + '%' : '—'}</td>
+              <td class="mono text-muted">${h.w != null ? h.w + '%' : '—'}</td>
+              <td class="mono" id="iw${i}">—</td>
               <td class="mono ${col(h.r)}">${sgnPct(h.r)}</td>
-              <td class="mono ${col(h.c)}">${sgnPct(h.c)}</td>
+              <td class="mono" id="ic${i}">—</td>
               <td class="mono">${h.p != null ? money(h.p) : '—'}</td>
               <td class="mono text-cyan" id="iq${i}" style="font-weight:700">—</td>
               <td class="mono text-emerald" id="ia${i}">—</td>
             </tr>`).join('')}
           </tbody>
           <tfoot>
-            <tr style="border-top:1px solid var(--border)">
-              <td colspan="5" class="text-muted" style="font-size:.68rem;text-align:right">Held positions</td>
-              <td class="mono ${col(held)}">${sgnPct(held)}</td><td colspan="3"></td>
-            </tr>
-            <tr>
-              <td colspan="5" class="text-muted" style="font-size:.68rem;text-align:right"
-                  title="P&amp;L booked on positions that left the portfolio this month — they are no longer in the book above, so they appear here.">Positions exited this month</td>
-              <td class="mono ${col(exited)}">${sgnPct(exited)}</td><td colspan="3"></td>
-            </tr>
-            <tr style="border-top:1px solid var(--border)">
-              <td colspan="5" class="text-muted" style="font-size:.68rem;text-align:right">Portfolio return (month)</td>
-              <td class="mono ${col(portRet)}" style="font-weight:700">${sgnPct(portRet)}</td><td colspan="3"></td>
-            </tr>
-            <tr style="border-top:1px solid var(--border)">
-              <td colspan="8" class="text-muted" style="font-size:.68rem;text-align:right">Total Invested</td>
+            <tr style="border-top:2px solid var(--border)">
+              <td colspan="6" class="text-muted" style="font-size:.68rem;text-align:right" id="inv-ret-label">Return on your amount</td>
+              <td class="mono" id="inv-ret" style="font-weight:700">—</td>
+              <td></td>
+              <td class="text-muted" style="font-size:.68rem;text-align:right">Invested</td>
               <td class="mono text-emerald" id="inv-total" style="font-weight:700">—</td>
             </tr>
             <tr>
-              <td colspan="8" class="text-muted" style="font-size:.68rem;text-align:right">Cash Left</td>
+              <td colspan="6" class="text-muted" style="font-size:.65rem;text-align:right;opacity:.8">
+                whole shares, minimum 1 of each — so achieved weights differ from target</td>
+              <td></td><td></td>
+              <td class="text-muted" style="font-size:.68rem;text-align:right" id="inv-cash-label">Cash Left</td>
               <td class="mono" id="inv-cash" style="color:var(--slate)">—</td>
+            </tr>
+            <tr style="border-top:2px solid var(--border)">
+              <td colspan="6" class="text-muted" style="font-size:.68rem;text-align:right">Model book — held positions</td>
+              <td class="mono ${col(held)}">${sgnPct(held)}</td><td colspan="3"></td>
+            </tr>
+            <tr>
+              <td colspan="6" class="text-muted" style="font-size:.68rem;text-align:right"
+                  title="P&amp;L booked on positions that left the portfolio this month — they are no longer in the book above, so they appear here.">Model book — positions exited</td>
+              <td class="mono ${col(exited)}">${sgnPct(exited)}</td><td colspan="3"></td>
+            </tr>
+            <tr>
+              <td colspan="6" class="text-muted" style="font-size:.68rem;text-align:right"
+                  title="The engine's own result for the month, on its Rs.1 Cr book where share rounding is immaterial.">Portfolio return (month, model)</td>
+              <td class="mono ${col(portRet)}" style="font-weight:700">${sgnPct(portRet)}</td><td colspan="3"></td>
             </tr>
           </tfoot>
         </table>
@@ -682,30 +692,102 @@ function openHeatModal(monthStr) {
 }
 window.openHeatModal = openHeatModal;
 
-/* Whole-share sizing against each position's average cost, shared with the
-   Live Portfolio tab so the amount carries between the two. */
+/* Size a book for a real rupee amount, shared by the drill-down and the Live
+   Portfolio tab so the amount carries between them.
+
+   Two rules make this differ from the model book:
+     - whole shares only, and at least ONE of every holding, so nothing the
+       model holds gets rounded away;
+     - the achieved weights are therefore not the target weights, so the
+       contributions and the portfolio return are recomputed from what was
+       actually bought rather than scaled down from the engine's Rs.1 Cr book,
+       where the same rounding is immaterial.
+
+   At small amounts a high-priced name can only be bought in a lump, so its
+   achieved weight overshoots its target and the book can cost more than the
+   amount entered. Both effects are surfaced rather than hidden. */
 let sharedInvest = 100000;
+const MIN_QTY = 1;
+
+function sizeBook(holds, amount) {
+  const rows = holds.map(h => {
+    if (h.p == null || h.p <= 0 || h.w == null || !amount) {
+      return { h, qty: null, value: 0, actualW: null, contrib: null };
+    }
+    const qty = Math.max(MIN_QTY, Math.floor(amount * (h.w / 100) / h.p));
+    return { h, qty, value: qty * h.p, actualW: null, contrib: null };
+  });
+  const invested = rows.reduce((a, r) => a + r.value, 0);
+  rows.forEach(r => {
+    if (r.qty == null || invested <= 0) return;
+    r.actualW = r.value / invested * 100;
+    if (r.h.r != null) r.contrib = r.actualW / 100 * r.h.r;
+  });
+  const ret = rows.some(r => r.contrib != null)
+    ? rows.reduce((a, r) => a + (r.contrib || 0), 0) : null;
+  return { rows, invested, ret, cash: amount - invested };
+}
+
+/* Paint a sized book into a table. `ids` gives the per-row cell prefixes and the
+   footer element ids, so the drill-down and the Live Portfolio tab share this. */
+function paintSizing(holds, amount, ids) {
+  const sized = sizeBook(holds, amount);
+
+  sized.rows.forEach((r, i) => {
+    const set = (id, txt, cls) => {
+      const e = document.getElementById(id + i);
+      if (!e) return;
+      e.textContent = txt;
+      if (cls !== undefined) e.className = cls;
+    };
+    if (r.qty == null) { set(ids.qty, '—'); set(ids.amt, '—'); set(ids.contrib, '—', 'mono text-muted'); return; }
+    set(ids.qty, r.qty.toLocaleString('en-IN'));
+    set(ids.amt, money(r.value));
+    set(ids.contrib, r.contrib == null ? '—' : (r.contrib >= 0 ? '+' : '') + r.contrib.toFixed(2) + '%',
+        'mono ' + (r.contrib == null ? 'text-muted' : (r.contrib >= 0 ? 'text-emerald' : 'text-rose')));
+    const wEl = document.getElementById(ids.wt + i);
+    if (wEl && r.actualW != null) {
+      wEl.textContent = r.actualW.toFixed(2) + '%';
+      wEl.title = `Target weight ${r.h.w}% — achieved ${r.actualW.toFixed(2)}% once rounded to whole shares`;
+      const off = Math.abs(r.actualW - r.h.w);
+      wEl.className = 'mono' + (off > 2 ? ' text-rose' : '');
+    }
+  });
+
+  const put = (id, txt, cls) => {
+    const e = document.getElementById(id);
+    if (!e) return;
+    e.textContent = txt;
+    if (cls !== undefined) e.className = cls;
+  };
+  put(ids.total, money(sized.invested));
+  put(ids.ret, sized.ret == null ? '—' : (sized.ret >= 0 ? '+' : '') + sized.ret.toFixed(2) + '%',
+      'mono ' + (sized.ret == null ? 'text-muted' : (sized.ret >= 0 ? 'text-emerald' : 'text-rose')));
+  put(ids.retLabel, `${ids.retText || 'Return on your'} ${money(amount)}`);
+
+  // With a one-share floor the book can cost more than the amount entered.
+  const over = sized.cash < 0;
+  put(ids.cashLabel, over ? 'Additional needed for 1 share of each' : 'Cash Left');
+  put(ids.cash, money(Math.abs(sized.cash)), 'mono ' + (over ? 'text-rose' : ''));
+  return sized;
+}
+
+const MODAL_IDS = {
+  qty: 'iq', amt: 'ia', contrib: 'ic', wt: 'iw',
+  total: 'inv-total', ret: 'inv-ret', retLabel: 'inv-ret-label',
+  cash: 'inv-cash', cashLabel: 'inv-cash-label'
+};
+const PORT_IDS = {
+  qty: 'pq', amt: 'pa', contrib: 'pc', wt: 'pw',
+  total: 'pinv-total', ret: 'pinv-ret', retLabel: 'pinv-ret-label',
+  cash: 'pinv-cash', cashLabel: 'pinv-cash-label',
+  retText: 'Month-to-date on your'
+};
 
 function recalcInvest() {
   const el = document.getElementById('inv-amt');
-  const amt = el ? (+el.value || 0) : sharedInvest;
-  sharedInvest = amt;
-  let spent = 0;
-  modalHolds.forEach((h, i) => {
-    const qtyEl = document.getElementById('iq' + i);
-    const amtEl = document.getElementById('ia' + i);
-    if (!qtyEl || !amtEl) return;
-    if (h.p == null || h.w == null || !amt) { qtyEl.textContent = '—'; amtEl.textContent = '—'; return; }
-    const qty = Math.floor(amt * (h.w / 100) / h.p);
-    const value = qty * h.p;
-    spent += value;
-    qtyEl.textContent = qty.toLocaleString('en-IN');
-    amtEl.textContent = money(value);
-  });
-  const t = document.getElementById('inv-total');
-  const c = document.getElementById('inv-cash');
-  if (t) t.textContent = money(spent);
-  if (c) c.textContent = money(Math.max(0, amt - spent));
+  sharedInvest = el ? (+el.value || 0) : sharedInvest;
+  paintSizing(modalHolds, sharedInvest, MODAL_IDS);
 }
 window.recalcInvest = recalcInvest;
 
@@ -1073,21 +1155,39 @@ function renderPortfolio() {
   renderSectorPie('portSector');
 }
 
-function renderHoldings() {
+/* Prices for the live book come from the same month's PM snapshot, so the tab can
+   size real quantities instead of showing a weight times an amount. */
+function liveBookRows() {
   const b = book();
+  const key = `${state.universe}_goldsilver`;
+  const month = M.live ? M.live.month : null;
+  const snap = (typeof MONTHLY_HOLDINGS !== 'undefined' && month && MONTHLY_HOLDINGS[key]?.[month]) || [];
+  const byS = {};
+  snap.forEach(h => { byS[h.s] = h; });
+  return b.holdings.map(h => {
+    const s = byS[h.symbol] || {};
+    return { ...h, s: h.symbol, w: h.weight * 100, p: s.p ?? null, r: s.r ?? null };
+  });
+}
+
+function renderHoldings() {
+  const rows = liveBookRows();
   const amt = +document.getElementById('pinv-amt').value || 0;
-  document.getElementById('holdingsBody').innerHTML = b.holdings.map(h => `
+  document.getElementById('holdingsBody').innerHTML = rows.map((h, i) => `
     <tr${h.is_metal ? ' style="background:rgba(244,185,66,.08)"' : ''}>
       <td class="mono text-muted">${h.rank}</td>
       <td class="mono" style="font-weight:600;color:${h.is_metal ? '#f4b942' : 'var(--cyan)'}">${h.symbol}</td>
       <td class="text-muted" style="font-size:.7rem">${h.sector}</td>
-      <td class="mono">${pct(h.weight, 2)}</td>
+      <td class="mono text-muted">${pct(h.weight, 2)}</td>
+      <td class="mono" id="pw${i}">—</td>
       <td class="mono ${h.beta < 0 ? 'text-emerald' : ''}">${num(h.beta)}</td>
-      <td class="mono">${num(h.erb)}</td>
-      <td class="mono text-emerald">${money(h.weight * amt)}</td>
+      <td class="mono ${h.r == null ? 'text-muted' : (h.r >= 0 ? 'text-emerald' : 'text-rose')}">${h.r == null ? '—' : (h.r >= 0 ? '+' : '') + h.r.toFixed(2) + '%'}</td>
+      <td class="mono" id="pc${i}">—</td>
+      <td class="mono">${h.p != null ? money(h.p) : '—'}</td>
+      <td class="mono text-cyan" id="pq${i}" style="font-weight:700">—</td>
+      <td class="mono text-emerald" id="pa${i}">—</td>
     </tr>`).join('');
-  const total = b.holdings.reduce((a, h) => a + h.weight, 0) * amt;
-  document.getElementById('pinv-total').textContent = money(total);
+  paintSizing(rows, amt, PORT_IDS);
 }
 
 function recalcPortInvest() { renderHoldings(); }

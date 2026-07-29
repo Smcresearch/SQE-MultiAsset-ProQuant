@@ -69,6 +69,31 @@ Both terms are shown in the table footer. The exited-position line is a real
 quantity taken from the engine, not a plug — its median across all 600
 month-books is 0.02%.
 
+## Sizing for a real amount
+
+The model book is sized against ₹1 crore, where rounding a position to whole
+shares is immaterial. At ₹1 lakh it is not, so entering an amount does not
+scale the model's numbers — it re-derives them from what could actually be
+bought:
+
+- whole shares only, and **at least one of every holding**, so nothing the
+  model holds is rounded away;
+- the achieved weight of each position is therefore its own cost over the total
+  cost, not its target weight;
+- **Contrib** is that achieved weight × the stock's return, and the footer's
+  return is their sum — the return on *your* amount, not the model's.
+
+The one-share floor has a consequence worth stating plainly: a high-priced name
+can only be bought in a lump, so at small amounts its achieved weight overshoots
+its target and the book can cost more than the amount entered. At ₹1 lakh, 441
+of the 600 month-books do. The table shows each position's achieved weight
+against its target (flagged when it drifts more than 2pp) and the footer turns
+"Cash Left" into "Additional needed for 1 share of each", so the shortfall is
+visible rather than silently truncated.
+
+The model's own result stays on screen underneath, clearly labelled, so the two
+are never confused.
+
 ## Files
 - `index.html` — page shell and layout
 - `style.css` — styling (shared with the other SQE terminals)
