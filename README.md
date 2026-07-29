@@ -23,13 +23,26 @@ alongside the equity basket. Metals never compete with stocks for a slot.
 
 ## Backtest window
 
-**Jun 2022 – Apr 2026 (47 months)**, identical for every universe and every
-sleeve so the comparison is like-for-like. The start is set by SILVERBEES
+**Jun 2022 – Jun 2026 (49 completed months)**, identical for every universe and
+every sleeve so the comparison is like-for-like. The start is set by SILVERBEES
 inception (10 May 2022) — there is no silver price history before that, so no
 earlier window can contain a genuine three-asset portfolio.
 
 Returns follow the engine's trade convention: the basket is formed on the signal
 month's close, bought at the trade month's open and sold at its close.
+
+### The live month
+
+The newest month is usually still running. Its book is formed and traded, but
+its return is only month-to-date, so folding it into an annualised statistic
+would distort everything downstream. It is therefore held apart: `data.js` keeps
+it under `live`, never inside `monthly`, and the site shows it in its own card,
+as a marked cell in the heatmap (excluded from the year total) and as a labelled
+row in the CSV export. Every headline figure — CAGR, Sharpe, drawdown, win rate
+— covers completed months only.
+
+The **Live Portfolio** tab shows the book formed on the last completed signal
+month's close, i.e. the basket being held right now.
 
 ## Files
 - `index.html` — page shell and layout

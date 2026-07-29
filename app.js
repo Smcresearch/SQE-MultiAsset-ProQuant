@@ -100,9 +100,15 @@ function closeModal() { document.getElementById('hmModal').classList.remove('ope
    the benchmark — so anything on screen can be checked in a spreadsheet. */
 function exportReport() {
   const u = state.universe, ms = months(u), b = benchRets(u);
-  const head = ['Month', ...VKEYS.map(v => VARIANTS[v].label), M.runs[`${u}_base`].bench_name];
+  const head = ['Month', ...VKEYS.map(v => VARIANTS[v].label), M.runs[`${u}_base`].bench_name, 'Status'];
   const rows = ms.map((m, i) =>
-    [m, ...VKEYS.map(v => (portRets(u, v)[i] * 100).toFixed(4)), (b[i] * 100).toFixed(4)]);
+    [m, ...VKEYS.map(v => (portRets(u, v)[i] * 100).toFixed(4)), (b[i] * 100).toFixed(4), 'complete']);
+  if (M.live) {
+    const lb = M.live.runs[`${u}_base`].bench_ret;
+    rows.push([M.live.month,
+      ...VKEYS.map(v => (M.live.runs[`${u}_${v}`].port_ret * 100).toFixed(4)),
+      (lb * 100).toFixed(4), `live month-to-date as of ${M.live.as_of} — excluded from all statistics`]);
+  }
   const csv = [head, ...rows].map(r => r.join(',')).join('\n');
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
   const a = document.createElement('a');
@@ -198,11 +204,20 @@ function renderChartControls(id) {
 }
 
 /* ── HEADER / SLEEVE SELECTOR ────────────────── */
+/* The in-progress month, if the data has one. Its return is month-to-date, so it
+   is deliberately kept out of every statistic and shown on its own. */
+function liveRow(u = state.universe, v = state.variant) {
+  return M.live ? M.live.runs[`${u}_${v}`] : null;
+}
+
 function renderHeader() {
   const w = M.meta.window, r = run();
   document.getElementById('last-refresh').textContent = 'Terminal Updated: ' + M.meta.generated;
+  const liveNote = M.live
+    ? ` · ${fmtMonth(M.live.month)} is live (month-to-date to ${M.live.as_of}) and is excluded from every statistic`
+    : '';
   document.getElementById('backtest-period').textContent =
-    `Backtest: ${fmtMonth(w.first)} – ${fmtMonth(w.last)} · ${w.months} months · window bounded by SILVERBEES inception (May 2022) · all metrics computed over this period`;
+    `Backtest: ${fmtMonth(w.first)} – ${fmtMonth(w.last)} · ${w.months} completed months · window starts at SILVERBEES inception (May 2022) · all metrics computed over this period${liveNote}`;
 
   const badge = document.getElementById('regime-badge');
   const baseRun = M.runs[`${state.universe}_base`];
@@ -286,6 +301,7 @@ function renderOverview() {
     scales: { y: { ticks: { callback: v => '₹' + v.toFixed(1) } } }
   });
 
+  renderLiveStrip();
   renderSectorPie('overviewSectorPie');
   renderLift();
 
@@ -313,6 +329,54 @@ function renderOverview() {
       y: { title: { display: true, text: 'CAGR %' }, ticks: { callback: v => v + '%' } }
     }
   });
+}
+
+/* The current, unfinished month: every sleeve's month-to-date against the
+   benchmark and the two ETFs. Never folded into CAGR, Sharpe or drawdown. */
+function renderLiveStrip() {
+  const card = document.getElementById('live-card');
+  if (!M.live) { card.style.display = 'none'; return; }
+  card.style.display = '';
+
+  const lr = liveRow();
+  document.getElementById('live-title').textContent =
+    `Live Month — ${fmtMonth(M.live.month)}`;
+  document.getElementById('live-sub').textContent =
+    `Book formed on the ${fmtMonth(M.meta.window.last)} close and held through ${fmtMonth(M.live.month)}. ` +
+    `Month-to-date as of ${M.live.as_of} — the month has not finished, so these figures are excluded from every statistic on this site.`;
+
+  const bench = lr ? lr.bench_ret : null;
+  const rows = VKEYS.map(v => {
+    const row = liveRow(state.universe, v);
+    return {
+      label: VARIANTS[v].label, color: VARIANTS[v].color,
+      val: row ? row.port_ret : null,
+      vs: row && bench != null ? row.port_ret - bench : null
+    };
+  });
+
+  const assets = [
+    { label: run().bench_name, color: BENCH_COLOR, val: bench, vs: null },
+    { label: 'GOLDBEES', color: '#f4b942', val: M.live.gold, vs: null },
+    { label: 'SILVERBEES', color: '#9fb3c8', val: M.live.silver, vs: null }
+  ];
+
+  const line = r => `
+    <tr${r.label === VARIANTS[state.variant].label ? ' style="background:rgba(34,211,238,.06)"' : ''}>
+      <td><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${r.color};margin-right:.5rem"></span>${r.label}</td>
+      <td class="mono ${tone(r.val)}" style="font-weight:600">${r.val == null ? '—' : spct(r.val)}</td>
+      <td class="mono ${r.vs == null ? '' : tone(r.vs)}">${r.vs == null ? '' : spct(r.vs)}</td>
+    </tr>`;
+
+  document.getElementById('live-container').innerHTML = `
+    <table class="data-table">
+      <thead><tr><th>${fmtMonth(M.live.month)} month-to-date</th><th>Return</th><th>vs Benchmark</th></tr></thead>
+      <tbody>
+        ${rows.map(line).join('')}
+        <tr><td colspan="3" style="height:.4rem;border:none"></td></tr>
+        ${assets.map(line).join('')}
+      </tbody>
+    </table>`;
 }
 
 /* Each overlay measured against the Equity Only control. */
@@ -382,6 +446,13 @@ function renderHeatmap(variant) {
     grid[yr][mo] = +(r.port_ret * 100).toFixed(2);
   });
 
+  // The live month gets its own cell — shown, but kept out of the year total
+  // because it is only a part-month.
+  const lr = liveRow(state.universe, variant);
+  const liveM = lr ? M.live.month : null;
+  const liveVal = lr ? +(lr.port_ret * 100).toFixed(2) : null;
+  if (liveM && !grid[liveM.slice(0, 4)]) grid[liveM.slice(0, 4)] = new Array(12).fill(null);
+
   const years = Object.keys(grid).sort((a, b) => +b - +a);
   let html = '<div class="heatmap-wrap"><div class="heatmap-grid">';
   html += '<div class="hm-head">Year</div>' + MON.map(m => `<div class="hm-head">${m}</div>`).join('')
@@ -391,7 +462,12 @@ function renderHeatmap(variant) {
     html += `<div class="hm-year">${yr}</div>`;
     grid[yr].forEach((val, mi) => {
       const monthStr = `${yr}-${String(mi + 1).padStart(2, '0')}`;
-      if (val === null) {
+      if (monthStr === liveM) {
+        html += `<div class="hm-cell" style="background:rgba(56,189,248,0.18);color:#38bdf8;font-weight:700;
+          outline:1px dashed rgba(56,189,248,.5);outline-offset:-2px"
+          onclick="openHeatModal('${monthStr}')"
+          title="${monthStr}: LIVE — ${liveVal > 0 ? '+' : ''}${liveVal}% month-to-date as of ${M.live.as_of}. The month is unfinished, so it is excluded from the year total and from every statistic.">${liveVal > 0 ? '+' : ''}${liveVal}</div>`;
+      } else if (val === null) {
         html += `<div class="hm-cell empty" title="${monthStr}: outside the backtest window">–</div>`;
       } else {
         const bg = heatColor(val);
@@ -405,8 +481,10 @@ function renderHeatmap(variant) {
       const total = +((got.reduce((a, v) => a * (1 + v / 100), 1) - 1) * 100).toFixed(2);
       const bg = heatColor(total);
       const fg = Math.abs(total) > 4 ? '#fff' : 'rgba(255,255,255,0.75)';
+      const liveNote = (liveM && liveM.slice(0, 4) === yr)
+        ? ` — excludes the live ${fmtMonth(liveM)} cell` : '';
       html += `<div class="hm-cell hm-total" style="background:${bg};color:${fg}"
-        title="${yr} compounded over the ${got.length} month(s) inside the window: ${total}%">${total > 0 ? '+' : ''}${total}</div>`;
+        title="${yr} compounded over the ${got.length} completed month(s) inside the window: ${total}%${liveNote}">${total > 0 ? '+' : ''}${total}</div>`;
     } else {
       html += '<div class="hm-cell empty"></div>';
     }
@@ -422,45 +500,46 @@ function heatColor(val) {
 }
 
 function openHeatModal(monthStr) {
+  const isLive = M.live && monthStr === M.live.month;
   const ms = months(), i = ms.indexOf(monthStr);
-  if (i < 0) return;
-  const bench = benchRets()[i];
-  const bm = M.bullion_monthly, bi = bm.months.indexOf(monthStr);
+  if (i < 0 && !isLive) return;
 
-  document.getElementById('modal-month').textContent = fmtMonth(monthStr);
+  const bench = isLive ? (liveRow()?.bench_ret ?? null) : benchRets()[i];
+  const bm = M.bullion_monthly, bi = isLive ? -1 : bm.months.indexOf(monthStr);
+  const goldVal = isLive ? M.live.gold : (bi >= 0 ? bm.gold_bh[bi] : null);
+  const silverVal = isLive ? M.live.silver : (bi >= 0 ? bm.silver_bh[bi] : null);
+
+  document.getElementById('modal-month').textContent =
+    fmtMonth(monthStr) + (isLive ? `  ·  LIVE, month-to-date as of ${M.live.as_of}` : '');
 
   const sleeveHtml = VKEYS.map(v => {
-    const val = portRets(state.universe, v)[i];
+    const val = isLive ? (liveRow(state.universe, v)?.port_ret ?? null)
+                       : portRets(state.universe, v)[i];
+    if (val == null) return '';
     return `
       <div class="modal-row">
         <div>
           <div class="modal-metric">${VARIANTS[v].label}</div>
           <div class="modal-val" style="color:${VARIANTS[v].color}">${spct(val)}</div>
-          <div class="modal-bench">${spct(val - bench)} vs benchmark</div>
+          <div class="modal-bench">${bench == null ? '' : spct(val - bench) + ' vs benchmark'}</div>
         </div>
       </div>`;
   }).join('');
 
-  const assetHtml = `
+  const assetRow = (label, val, color) => val == null ? '' : `
     <div class="modal-row">
       <div>
-        <div class="modal-metric">${run().bench_name}</div>
-        <div class="modal-val" style="color:${BENCH_COLOR}">${spct(bench)}</div>
+        <div class="modal-metric">${label}</div>
+        <div class="modal-val" style="color:${color}">${spct(val)}</div>
       </div>
-    </div>
-    ${bi >= 0 ? `
-    <div class="modal-row">
-      <div>
-        <div class="modal-metric">GOLDBEES</div>
-        <div class="modal-val" style="color:#f4b942">${spct(bm.gold_bh[bi])}</div>
-      </div>
-    </div>
-    <div class="modal-row">
-      <div>
-        <div class="modal-metric">SILVERBEES</div>
-        <div class="modal-val" style="color:#9fb3c8">${spct(bm.silver_bh[bi])}</div>
-      </div>
-    </div>` : ''}`;
+    </div>`;
+
+  const assetHtml = assetRow(run().bench_name, bench, BENCH_COLOR)
+    + assetRow('GOLDBEES', goldVal, '#f4b942')
+    + assetRow('SILVERBEES', silverVal, '#9fb3c8')
+    + (isLive ? `<div class="modal-row"><div><div class="modal-metric" style="color:#38bdf8">
+         This month is still running — the figures above are month-to-date and are not
+         used in any statistic on this site.</div></div></div>` : '');
 
   document.getElementById('modal-body').innerHTML = sleeveHtml + assetHtml;
   document.getElementById('hmModal').classList.add('open');
@@ -823,8 +902,9 @@ function renderPortfolio() {
       <span class="kpi-delta">${k.sub}</span>
     </div>`).join('');
 
+  const heldIn = M.live ? fmtMonth(M.live.month) : 'the following month';
   document.getElementById('book-sub').textContent =
-    `${UNIV_LABEL[state.universe]} — Equity + Gold + Silver book formed on the ${fmtMonth(b.portfolio_month + '-01')} close and held through the following month. This tab always shows the full overlay book, whichever sleeve is selected above.`;
+    `${UNIV_LABEL[state.universe]} — Equity + Gold + Silver book formed on the ${fmtMonth(b.portfolio_month + '-01')} close and held through ${heldIn}. This tab always shows the full overlay book, whichever sleeve is selected above.`;
 
   renderHoldings();
   renderSectorPie('portSector');
