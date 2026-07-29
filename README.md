@@ -44,11 +44,38 @@ row in the CSV export. Every headline figure — CAGR, Sharpe, drawdown, win rat
 The **Live Portfolio** tab shows the book formed on the last completed signal
 month's close, i.e. the basket being held right now.
 
+## Heatmap drill-down
+
+Clicking any cell in the PnL heatmap opens the book that actually produced that
+month: the month's Nifty 50 / Nifty 500 returns, portfolio beta and ex-ante
+Sharpe, every sleeve's return against the benchmark, and the full holdings list
+with an investment calculator.
+
+Two per-holding figures are shown and they are not the same thing:
+
+- **Return** — the price move across the trade month, open to close.
+- **Contrib** — the position's P&L that month as a share of capital.
+
+The engine runs a real book: positions carry forward at average cost, so a name
+can book a gain in a month its price fell. Contribution therefore is *not*
+weight × return, and only contribution reconciles:
+
+```
+sum(contributions of held positions) + P&L on positions exited this month
+    = the month's portfolio return
+```
+
+Both terms are shown in the table footer. The exited-position line is a real
+quantity taken from the engine, not a plug — its median across all 600
+month-books is 0.02%.
+
 ## Files
 - `index.html` — page shell and layout
 - `style.css` — styling (shared with the other SQE terminals)
 - `app.js` — rendering logic and interactivity
 - `data.js` — precomputed dashboard data (`MULTIASSET_DATA`)
+- `holdings.js` — per-month books for the drill-down (`MONTHLY_HOLDINGS`,
+  `MONTH_META`, `SECTOR_MAP`)
 
 ## Where the numbers come from
 
@@ -59,8 +86,11 @@ recompute every statistic from first principles out of the backtest workbooks
 
 - `metrics.json` — 12 runs (3 universes x 4 sleeves), monthly return series,
   standalone bullion statistics, the correlation matrix and the crisis-month table
-- `holdings.json` — the current Equity + Gold + Silver book per universe, with
-  NSE industry labels attached
+- `holdings.json` — the current Equity + Gold + Silver book per universe
+- `holdings_monthly.json` — every month's book for all 12 runs, pulled from the
+  per-month `PM_YYYY-MM` sheets, plus a sector map built from the price files'
+  own Industry column (the index constituent lists stop at the Nifty 500, which
+  left most of the All-Indices book unclassified)
 
 Nothing on this site is hand-typed, and nothing is recomputed in the browser
 except chart-level derivations (equity curves, drawdown, rolling returns) that

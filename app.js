@@ -28,7 +28,27 @@ function mon(u = state.universe, v = state.variant) { return M.monthly[`${u}_${v
 function months(u = state.universe) { return mon(u, 'base').map(r => r.trade_month); }
 function benchRets(u = state.universe) { return mon(u, 'base').map(r => r.bench_ret); }
 function portRets(u = state.universe, v = state.variant) { return mon(u, v).map(r => r.port_ret); }
-function book() { return M.holdings[state.universe]; }
+/* The current book, with sectors re-derived from SECTOR_MAP (built from the price
+   files' own Industry column). The constituent lists only cover the Nifty 500, so
+   without this most of the All-Indices book reads "Other / Unclassified". */
+const _bookCache = {};
+function book() {
+  const u = state.universe;
+  if (_bookCache[u]) return _bookCache[u];
+  const src = M.holdings[u];
+  if (typeof SECTOR_MAP === 'undefined') return src;
+
+  const holdings = src.holdings.map(h => ({ ...h, sector: SECTOR_MAP[h.symbol] || h.sector }));
+  const agg = {};
+  holdings.forEach(h => { agg[h.sector] = (agg[h.sector] || 0) + h.weight; });
+  _bookCache[u] = {
+    ...src,
+    holdings,
+    sectors: Object.entries(agg).sort((a, b) => b[1] - a[1]),
+    unclassified: holdings.filter(h => h.sector === 'Other / Unclassified').length
+  };
+  return _bookCache[u];
+}
 
 /* ── MATH ────────────────────────────────────── */
 function growth(rets, start = 1) {
@@ -499,52 +519,195 @@ function heatColor(val) {
   return `rgba(244,63,94,${Math.min(Math.abs(val) / 10, 0.85)})`;
 }
 
+/* Return for one universe/sleeve in a given month, live month included. */
+function retIn(u, v, monthStr) {
+  if (M.live && monthStr === M.live.month) return M.live.runs[`${u}_${v}`]?.port_ret ?? null;
+  const i = months(u).indexOf(monthStr);
+  return i < 0 ? null : portRets(u, v)[i];
+}
+function benchIn(u, monthStr) {
+  if (M.live && monthStr === M.live.month) return M.live.runs[`${u}_base`]?.bench_ret ?? null;
+  const i = months(u).indexOf(monthStr);
+  return i < 0 ? null : benchRets(u)[i];
+}
+
+let modalHolds = [];
+
+/* The book that produced a heatmap cell: the month's KPIs, every sleeve's return,
+   and the actual holdings with their contributions. */
 function openHeatModal(monthStr) {
   const isLive = M.live && monthStr === M.live.month;
-  const ms = months(), i = ms.indexOf(monthStr);
-  if (i < 0 && !isLive) return;
+  if (!isLive && months().indexOf(monthStr) < 0) return;
 
-  const bench = isLive ? (liveRow()?.bench_ret ?? null) : benchRets()[i];
+  const v = state.heatVariant;
+  const key = `${state.universe}_${v}`;
+  const bench = benchIn(state.universe, monthStr);
   const bm = M.bullion_monthly, bi = isLive ? -1 : bm.months.indexOf(monthStr);
   const goldVal = isLive ? M.live.gold : (bi >= 0 ? bm.gold_bh[bi] : null);
   const silverVal = isLive ? M.live.silver : (bi >= 0 ? bm.silver_bh[bi] : null);
 
+  const meta = (typeof MONTH_META !== 'undefined' && MONTH_META[key]?.[monthStr]) || {};
+  const holds = ((typeof MONTHLY_HOLDINGS !== 'undefined' && MONTHLY_HOLDINGS[key]?.[monthStr]) || [])
+    .map(h => ({ ...h, sec: h.m ? (h.s === 'GOLDBEES' ? 'Bullion - Gold ETF' : 'Bullion - Silver ETF')
+                                : ((typeof SECTOR_MAP !== 'undefined' && SECTOR_MAP[h.s]) || '—') }));
+  modalHolds = holds;
+
   document.getElementById('modal-month').textContent =
     fmtMonth(monthStr) + (isLive ? `  ·  LIVE, month-to-date as of ${M.live.as_of}` : '');
 
-  const sleeveHtml = VKEYS.map(v => {
-    const val = isLive ? (liveRow(state.universe, v)?.port_ret ?? null)
-                       : portRets(state.universe, v)[i];
-    if (val == null) return '';
-    return `
-      <div class="modal-row">
-        <div>
-          <div class="modal-metric">${VARIANTS[v].label}</div>
-          <div class="modal-val" style="color:${VARIANTS[v].color}">${spct(val)}</div>
-          <div class="modal-bench">${bench == null ? '' : spct(val - bench) + ' vs benchmark'}</div>
-        </div>
-      </div>`;
-  }).join('');
-
-  const assetRow = (label, val, color) => val == null ? '' : `
-    <div class="modal-row">
+  /* ── month KPI strip ── */
+  const kpiHtml = `
+    <div class="modal-row" style="background:rgba(34,211,238,0.05);border-radius:.5rem;padding:.75rem;grid-template-columns:repeat(4,1fr)">
       <div>
-        <div class="modal-metric">${label}</div>
-        <div class="modal-val" style="color:${color}">${spct(val)}</div>
+        <div class="modal-metric">Nifty 50</div>
+        <div class="modal-val" style="color:#94a3b8">${spct(benchIn('N50', monthStr))}</div>
+      </div>
+      <div>
+        <div class="modal-metric">Nifty 500</div>
+        <div class="modal-val" style="color:#94a3b8">${spct(benchIn('N500', monthStr))}</div>
+      </div>
+      <div>
+        <div class="modal-metric">Portfolio Beta</div>
+        <div class="modal-val" style="color:var(--gold)">${num(meta.port_beta)}</div>
+      </div>
+      <div>
+        <div class="modal-metric">Ex-Ante Sharpe</div>
+        <div class="modal-val" style="color:#22d3ee">${num(meta.exante_sharpe)}</div>
       </div>
     </div>`;
 
-  const assetHtml = assetRow(run().bench_name, bench, BENCH_COLOR)
-    + assetRow('GOLDBEES', goldVal, '#f4b942')
-    + assetRow('SILVERBEES', silverVal, '#9fb3c8')
-    + (isLive ? `<div class="modal-row"><div><div class="modal-metric" style="color:#38bdf8">
-         This month is still running — the figures above are month-to-date and are not
-         used in any statistic on this site.</div></div></div>` : '');
+  /* ── every sleeve's return for the month ── */
+  const sleeveHtml = '<div style="margin-top:1rem">' + VKEYS.map(k => {
+    const val = retIn(state.universe, k, monthStr);
+    if (val == null) return '';
+    const vs = bench == null ? null : val - bench;
+    return `<div class="modal-row"${k === v ? ' style="background:rgba(34,211,238,.06);border-radius:.4rem"' : ''}>
+      <div><div class="modal-metric" style="color:${VARIANTS[k].color}">${VARIANTS[k].label}</div></div>
+      <div>
+        <div class="modal-metric">Return</div>
+        <div class="modal-val" style="color:${val >= 0 ? '#10b981' : '#f43f5e'}">${spct(val)}</div>
+      </div>
+      <div>
+        <div class="modal-metric">vs ${run().bench_name}</div>
+        <div class="modal-val" style="color:${vs == null ? '#64748b' : (vs >= 0 ? '#10b981' : '#f43f5e')}">${vs == null ? 'N/A' : spct(vs)}</div>
+      </div>
+    </div>`;
+  }).join('') + `
+    <div class="modal-row">
+      <div><div class="modal-metric" style="color:#f4b942">GOLDBEES</div></div>
+      <div><div class="modal-metric">Return</div>
+        <div class="modal-val" style="color:${(goldVal ?? 0) >= 0 ? '#10b981' : '#f43f5e'}">${spct(goldVal)}</div></div>
+      <div><div class="modal-metric" style="color:#9fb3c8">SILVERBEES</div>
+        <div class="modal-val" style="color:${(silverVal ?? 0) >= 0 ? '#10b981' : '#f43f5e'}">${spct(silverVal)}</div></div>
+    </div>
+    ${isLive ? `<div class="modal-row"><div><div class="modal-metric" style="color:#38bdf8">
+      This month is still running — everything here is month-to-date and is not used in any
+      statistic on this site.</div></div></div>` : ''}
+  </div>`;
 
-  document.getElementById('modal-body').innerHTML = sleeveHtml + assetHtml;
+  /* ── the book that produced it ── */
+  const portRet = meta.port_ret != null ? meta.port_ret : (retIn(state.universe, v, monthStr) * 100);
+  const held = meta.held_contrib, exited = meta.exited_contrib;
+  const sgnPct = (x, d = 2) => x == null ? '—' : (x >= 0 ? '+' : '') + x.toFixed(d) + '%';
+  const col = x => x == null ? 'text-muted' : (x >= 0 ? 'text-emerald' : 'text-rose');
+
+  const holdingsHtml = `
+    <div style="margin-top:1.25rem">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem;margin-bottom:.6rem">
+        <div class="modal-metric">${VARIANTS[v].label} — ${holds.length} Holding${holds.length === 1 ? '' : 's'}</div>
+        ${holds.length ? `<div style="display:flex;align-items:center;gap:.5rem">
+          <span class="modal-metric">Invest</span>
+          <span class="mono" style="color:var(--slate)">₹</span>
+          <input id="inv-amt" type="number" min="0" step="10000" value="${sharedInvest}" oninput="recalcInvest()"
+            style="width:130px;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:.4rem;
+                   color:var(--cyan);font-family:var(--mono);font-weight:700;padding:.35rem .5rem;font-size:.8rem">
+        </div>` : ''}
+      </div>
+      ${holds.length ? `
+      <div style="border:1px solid var(--border);border-radius:.5rem;overflow:hidden">
+        <table class="data-table mini-table">
+          <colgroup>
+            <col style="width:4%"><col style="width:15%"><col style="width:18%"><col style="width:9%"><col style="width:10%"><col style="width:11%"><col style="width:12%"><col style="width:7%"><col style="width:14%">
+          </colgroup>
+          <thead><tr>
+            <th>#</th><th>Stock</th><th>Sector</th><th>Weight</th>
+            <th title="Price move across the trade month: open to close.">Return</th>
+            <th title="The position's P&amp;L this month as a share of capital. The engine carries positions at average cost, so gains realised on an older position count here — which is why this is not simply Weight × Return.">Contrib</th>
+            <th title="The position's average cost — the basis quantities are sized against.">Avg Buy Price</th>
+            <th>Qty</th><th>Amount</th>
+          </tr></thead>
+          <tbody>
+            ${holds.map((h, i) => `<tr${h.m ? ' style="background:rgba(244,185,66,.08)"' : ''}>
+              <td class="text-muted mono" style="font-size:.65rem">${i + 1}</td>
+              <td class="mono" style="font-weight:700;color:${h.m ? '#f4b942' : 'inherit'}">${h.s}</td>
+              <td class="text-muted" style="font-size:.68rem">${h.sec}</td>
+              <td class="mono">${h.w != null ? h.w + '%' : '—'}</td>
+              <td class="mono ${col(h.r)}">${sgnPct(h.r)}</td>
+              <td class="mono ${col(h.c)}">${sgnPct(h.c)}</td>
+              <td class="mono">${h.p != null ? money(h.p) : '—'}</td>
+              <td class="mono text-cyan" id="iq${i}" style="font-weight:700">—</td>
+              <td class="mono text-emerald" id="ia${i}">—</td>
+            </tr>`).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="border-top:1px solid var(--border)">
+              <td colspan="5" class="text-muted" style="font-size:.68rem;text-align:right">Held positions</td>
+              <td class="mono ${col(held)}">${sgnPct(held)}</td><td colspan="3"></td>
+            </tr>
+            <tr>
+              <td colspan="5" class="text-muted" style="font-size:.68rem;text-align:right"
+                  title="P&amp;L booked on positions that left the portfolio this month — they are no longer in the book above, so they appear here.">Positions exited this month</td>
+              <td class="mono ${col(exited)}">${sgnPct(exited)}</td><td colspan="3"></td>
+            </tr>
+            <tr style="border-top:1px solid var(--border)">
+              <td colspan="5" class="text-muted" style="font-size:.68rem;text-align:right">Portfolio return (month)</td>
+              <td class="mono ${col(portRet)}" style="font-weight:700">${sgnPct(portRet)}</td><td colspan="3"></td>
+            </tr>
+            <tr style="border-top:1px solid var(--border)">
+              <td colspan="8" class="text-muted" style="font-size:.68rem;text-align:right">Total Invested</td>
+              <td class="mono text-emerald" id="inv-total" style="font-weight:700">—</td>
+            </tr>
+            <tr>
+              <td colspan="8" class="text-muted" style="font-size:.68rem;text-align:right">Cash Left</td>
+              <td class="mono" id="inv-cash" style="color:var(--slate)">—</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>` : `<div class="text-muted" style="font-size:.75rem">No holdings snapshot for this month.</div>`}
+    </div>`;
+
+  document.getElementById('modal-body').innerHTML = kpiHtml + sleeveHtml + holdingsHtml;
   document.getElementById('hmModal').classList.add('open');
+  recalcInvest();
 }
 window.openHeatModal = openHeatModal;
+
+/* Whole-share sizing against each position's average cost, shared with the
+   Live Portfolio tab so the amount carries between the two. */
+let sharedInvest = 100000;
+
+function recalcInvest() {
+  const el = document.getElementById('inv-amt');
+  const amt = el ? (+el.value || 0) : sharedInvest;
+  sharedInvest = amt;
+  let spent = 0;
+  modalHolds.forEach((h, i) => {
+    const qtyEl = document.getElementById('iq' + i);
+    const amtEl = document.getElementById('ia' + i);
+    if (!qtyEl || !amtEl) return;
+    if (h.p == null || h.w == null || !amt) { qtyEl.textContent = '—'; amtEl.textContent = '—'; return; }
+    const qty = Math.floor(amt * (h.w / 100) / h.p);
+    const value = qty * h.p;
+    spent += value;
+    qtyEl.textContent = qty.toLocaleString('en-IN');
+    amtEl.textContent = money(value);
+  });
+  const t = document.getElementById('inv-total');
+  const c = document.getElementById('inv-cash');
+  if (t) t.textContent = money(spent);
+  if (c) c.textContent = money(Math.max(0, amt - spent));
+}
+window.recalcInvest = recalcInvest;
 
 /* ══════════════════════════════════════════════
    RISK & REWARD
