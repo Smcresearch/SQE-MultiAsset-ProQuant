@@ -69,6 +69,37 @@ Both terms are shown in the table footer. The exited-position line is a real
 quantity taken from the engine, not a plug — its median across all 600
 month-books is 0.02%.
 
+## Portfolio Size — restating the whole dashboard for an amount
+
+The **Portfolio Size** bar switches the entire terminal between two views:
+
+- **Model ₹1 Cr** — the engine's own book, where rounding a position to whole
+  shares is immaterial.
+- **Your Amount** — every statistic on every tab (CAGR, Sharpe, drawdown, win
+  rate, the equity curves, the heatmap, the tail table, the radar) restated for
+  the amount entered.
+
+Each month the published book is re-sized into whole shares with a one-share
+floor, and **only what that rounding changed** is carried onto the model's own
+month:
+
+```
+adjustment = return at achieved weights − return at target weights
+month      = the model's month + adjustment
+```
+
+Anchoring to the model is deliberate. Rebuilding each month's return from the
+holdings alone would also swap out the engine's accounting — it carries
+positions at average cost and books their P&L on rebalance, which a fresh buyer
+of the published book does not — and over this window that is worth about **4
+percentage points of CAGR**. That difference is a property of the accounting
+method, not of the amount, so it is held constant. The result is the behaviour
+you want: capital compounds, the rounding effect fades as the book grows, and at
+a large enough amount the numbers converge back on the published ones.
+
+Measured on the Nifty 500 overlay, the mean monthly deviation from the model is
+0.48% at ₹1 lakh, 0.019% at ₹25 lakh and 0.0008% at ₹5 crore.
+
 ## Sizing for a real amount
 
 The model book is sized against ₹1 crore, where rounding a position to whole

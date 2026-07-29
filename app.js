@@ -22,12 +22,174 @@ let state = {
 };
 const charts = {};
 
+/* ── SIZING MODE ─────────────────────────────────
+   'model' shows the engine's own book, sized against Rs.1 crore, where rounding
+   a position to whole shares is immaterial.
+
+   'amount' adjusts that same history for a real rupee figure. Each month the
+   published book is re-sized into whole shares with a one-share floor, and the
+   ONLY thing carried across is what that rounding did to the month:
+
+       adjustment = return at achieved weights - return at target weights
+       month      = the model's own month + adjustment
+
+   Anchoring to the model this way is deliberate. Rebuilding the return from the
+   holdings alone would also swap out the engine's accounting — it carries
+   positions at average cost and books their P&L on rebalance, which a fresh
+   buyer of the published book does not — and that is worth about 4pp of CAGR
+   over this window. That difference is a property of the method, not of the
+   amount, so it is held constant: at a large amount the adjustment vanishes and
+   the numbers converge on the published ones, which is the behaviour you want.
+
+   Capital compounds, so the lumpiness eases as the book grows. */
+let sizing = { mode: 'model', amount: 100000 };
+const _seriesCache = {};
+
+function haveBooks(u, v) {
+  return typeof MONTHLY_HOLDINGS !== 'undefined' && !!MONTHLY_HOLDINGS[`${u}_${v}`];
+}
+
+/* The book's return at its target weights — the no-rounding reference. */
+function exactReturn(holds) {
+  const priced = holds.filter(h => h.p != null && h.r != null && h.w != null);
+  const wsum = priced.reduce((a, h) => a + h.w, 0);
+  if (!wsum) return null;
+  return priced.reduce((a, h) => a + (h.w / wsum) * (h.r / 100), 0);
+}
+
+function amountSeries(u, v) {
+  const ck = `${u}_${v}_${sizing.amount}`;
+  if (_seriesCache[ck]) return _seriesCache[ck];
+
+  const books = MONTHLY_HOLDINGS[`${u}_${v}`] || {};
+  const model = mon(u, v);
+  const out = { rets: [], adj: [], overshoot: 0, minAmount: 0 };
+  let wealth = sizing.amount;
+  model.forEach(row => {
+    const holds = books[row.trade_month] || [];
+    const s = sizeBook(holds, wealth);
+    const exact = exactReturn(holds);
+    const adj = (s.ret == null || exact == null) ? 0 : s.ret / 100 - exact;
+    const r = row.port_ret + adj;
+    out.rets.push(r);
+    out.adj.push(adj);
+    if (s.invested > wealth) out.overshoot = Math.max(out.overshoot, s.invested / wealth - 1);
+    out.minAmount = Math.max(out.minAmount, s.invested);
+    wealth *= (1 + r);
+  });
+  out.final = wealth;
+  _seriesCache[ck] = out;
+  return out;
+}
+
+/* Every headline statistic, recomputed from a monthly return series — the same
+   definitions the Python extractor uses, so model and amount modes are directly
+   comparable. */
+function computeMetrics(port, bench, rf) {
+  const n = port.length, yrs = n / 12;
+  const sum = a => a.reduce((x, y) => x + y, 0);
+  const mean = a => a.length ? sum(a) / a.length : 0;
+  const sd = a => {
+    if (a.length < 2) return 0;
+    const m = mean(a);
+    return Math.sqrt(sum(a.map(x => (x - m) ** 2)) / (a.length - 1));
+  };
+  const S12 = Math.sqrt(12);
+  // The risk-free rate moves month to month; a single average would shift Sharpe
+  // and Sortino by a couple of basis points against the published figures.
+  const rfArr = Array.isArray(rf) ? rf : port.map(() => rf);
+
+  const growth = port.reduce((a, r) => a * (1 + r), 1);
+  const bgrowth = bench.reduce((a, r) => a * (1 + r), 1);
+  const cagr = growth ** (1 / yrs) - 1;
+  const bcagr = bgrowth ** (1 / yrs) - 1;
+
+  const excess = port.map((r, i) => r - rfArr[i] / 12);
+  const negDev = Math.sqrt(mean(excess.map(x => Math.min(x, 0) ** 2))) * S12;
+
+  let eq = 1, peak = 0, mdd = 0, under = 0, longest = 0;
+  port.forEach(r => {
+    eq *= (1 + r); peak = Math.max(peak, eq);
+    const dd = eq / peak - 1;
+    mdd = Math.min(mdd, dd);
+    under = dd < -1e-9 ? under + 1 : 0;
+    longest = Math.max(longest, under);
+  });
+  let beq = 1, bpeak = 0, bmdd = 0;
+  bench.forEach(r => { beq *= (1 + r); bpeak = Math.max(bpeak, beq); bmdd = Math.min(bmdd, beq / bpeak - 1); });
+
+  const wins = port.filter(r => r > 0), losses = port.filter(r => r <= 0);
+  const downside = port.filter(r => r < 0);      // strictly negative, unlike `losses`
+  const mp = mean(port), mb = mean(bench);
+  const cov = sum(port.map((r, i) => (r - mp) * (bench[i] - mb))) / (n - 1);
+  const bvar = sd(bench) ** 2;
+  const active = port.map((r, i) => r - bench[i]);
+  const te = sd(active) * S12;
+  const srt = [...port].sort((a, b) => a - b);
+  // Linear-interpolated percentile, matching numpy's default.
+  const q = p => {
+    const pos = p / 100 * (srt.length - 1);
+    const lo = Math.floor(pos), hi = Math.ceil(pos);
+    return srt[lo] + (pos - lo) * (srt[hi] - srt[lo]);
+  };
+  const var95 = q(5), var99 = q(1);
+  const tail = t => { const s = srt.filter(x => x <= t); return s.length ? mean(s) : t; };
+
+  return {
+    months: n, years: yrs, growth_of_1: growth, total_return: growth - 1,
+    cagr, bench_cagr: bcagr, alpha_ann: cagr - bcagr, bench_total_return: bgrowth - 1,
+    vol: sd(port) * S12, bench_vol: sd(bench) * S12,
+    downside_dev: downside.length > 1 ? sd(downside) * S12 : NaN,
+    sharpe: sd(excess) > 0 ? mean(excess) / sd(excess) * S12 : NaN,
+    sortino: negDev > 0 ? mean(excess) * 12 / negDev : NaN,
+    max_dd: mdd, bench_max_dd: bmdd, dd_duration: longest,
+    calmar: mdd ? cagr / Math.abs(mdd) : NaN,
+    win_rate: wins.length / n,
+    profit_factor: losses.length && sum(losses) !== 0 ? sum(wins) / Math.abs(sum(losses)) : Infinity,
+    best_month: Math.max(...port), worst_month: Math.min(...port),
+    avg_gain: wins.length ? mean(wins) : 0, avg_loss: losses.length ? mean(losses) : 0,
+    expectancy: mp,
+    beta: bvar ? cov / bvar : NaN,
+    corr_bench: (sd(port) * sd(bench)) ? cov / (sd(port) * sd(bench)) : NaN,
+    tracking_error: te, info_ratio: te > 0 ? mean(active) * 12 / te : NaN,
+    var95, var99, cvar95: tail(var95), cvar99: tail(var99),
+    rf_avg: mean(rfArr)
+  };
+}
+
+const _metricCache = {};
+function amountMetrics(u, v) {
+  const ck = `${u}_${v}_${sizing.amount}`;
+  if (_metricCache[ck]) return _metricCache[ck];
+  const model = M.runs[`${u}_${v}`];
+  const s = amountSeries(u, v);
+  const m = computeMetrics(s.rets, benchRets(u), mon(u, 'base').map(r => r.rf));
+  // Carry over what does not depend on sizing: labels, sleeve weights, and the
+  // engine's ex-ante forecasts (made at formation, before any rupee figure).
+  _metricCache[ck] = {
+    ...model, ...m,
+    bench_name: model.bench_name, variant_name: model.variant_name,
+    universe_name: model.universe_name,
+    stock_w: model.stock_w, gold_w: model.gold_w, silver_w: model.silver_w,
+    final_value: s.final, overshoot: s.overshoot, min_amount: s.minAmount,
+    sized: true
+  };
+  return _metricCache[ck];
+}
+
 /* ── DATA ACCESSORS ──────────────────────────── */
-function run(u = state.universe, v = state.variant) { return M.runs[`${u}_${v}`]; }
+function sized(u = state.universe, v = state.variant) {
+  return sizing.mode === 'amount' && haveBooks(u, v);
+}
+function run(u = state.universe, v = state.variant) {
+  return sized(u, v) ? amountMetrics(u, v) : M.runs[`${u}_${v}`];
+}
 function mon(u = state.universe, v = state.variant) { return M.monthly[`${u}_${v}`]; }
 function months(u = state.universe) { return mon(u, 'base').map(r => r.trade_month); }
 function benchRets(u = state.universe) { return mon(u, 'base').map(r => r.bench_ret); }
-function portRets(u = state.universe, v = state.variant) { return mon(u, v).map(r => r.port_ret); }
+function portRets(u = state.universe, v = state.variant) {
+  return sized(u, v) ? amountSeries(u, v).rets : mon(u, v).map(r => r.port_ret);
+}
 /* The current book, with sectors re-derived from SECTOR_MAP (built from the price
    files' own Industry column). The constituent lists only cover the Nifty 500, so
    without this most of the All-Indices book reads "Other / Unclassified". */
@@ -93,6 +255,32 @@ function switchVariant(v) {
   renderHeader();
   renderTab(state.tab);
 }
+
+function setSizingMode(mode) {
+  sizing.mode = mode;
+  sharedInvest = sizing.amount;
+  renderSizingBar();
+  renderHeader();
+  renderTab(state.tab);
+}
+
+let _amtTimer = null;
+function setAmount(v) {
+  const n = Math.max(1000, +v || 0);
+  sizing.amount = n;
+  sharedInvest = n;
+  // Typing a figure is a statement of intent — switch into amount mode for it.
+  sizing.mode = 'amount';
+  clearTimeout(_amtTimer);
+  _amtTimer = setTimeout(() => {
+    renderSizingBar();
+    renderHeader();
+    renderTab(state.tab);
+  }, 250);
+}
+
+window.setSizingMode = setSizingMode;
+window.setAmount = setAmount;
 
 function switchTab(tab) {
   state.tab = tab;
@@ -227,7 +415,17 @@ function renderChartControls(id) {
 /* The in-progress month, if the data has one. Its return is month-to-date, so it
    is deliberately kept out of every statistic and shown on its own. */
 function liveRow(u = state.universe, v = state.variant) {
-  return M.live ? M.live.runs[`${u}_${v}`] : null;
+  if (!M.live) return null;
+  const model = M.live.runs[`${u}_${v}`];
+  if (!model || !sized(u, v)) return model;
+  // Same adjustment as the history: size the live book against what the amount
+  // has compounded to, and carry across only what the rounding changed.
+  const books = MONTHLY_HOLDINGS[`${u}_${v}`] || {};
+  const holds = books[M.live.month] || [];
+  const s = sizeBook(holds, amountSeries(u, v).final);
+  const exact = exactReturn(holds);
+  if (s.ret == null || exact == null) return model;
+  return { ...model, port_ret: model.port_ret + (s.ret / 100 - exact) };
 }
 
 function renderHeader() {
@@ -236,8 +434,11 @@ function renderHeader() {
   const liveNote = M.live
     ? ` · ${fmtMonth(M.live.month)} is live (month-to-date to ${M.live.as_of}) and is excluded from every statistic`
     : '';
+  const sizeNote = sizing.mode === 'amount'
+    ? ` · sized for ${money(sizing.amount)}, whole shares`
+    : ' · model book, ₹1 Cr';
   document.getElementById('backtest-period').textContent =
-    `Backtest: ${fmtMonth(w.first)} – ${fmtMonth(w.last)} · ${w.months} completed months · window starts at SILVERBEES inception (May 2022) · all metrics computed over this period${liveNote}`;
+    `Backtest: ${fmtMonth(w.first)} – ${fmtMonth(w.last)} · ${w.months} completed months · window starts at SILVERBEES inception (May 2022) · all metrics computed over this period${sizeNote}${liveNote}`;
 
   const badge = document.getElementById('regime-badge');
   const baseRun = M.runs[`${state.universe}_base`];
@@ -263,6 +464,27 @@ function renderVariantTabs() {
   document.getElementById('variant-tabs').innerHTML = VKEYS.map(v =>
     `<button class="layer-tab-btn ${v === state.variant ? 'active' : ''}"
        onclick="switchVariant('${v}')">${VARIANTS[v].label}</button>`).join('');
+}
+
+function renderSizingBar() {
+  const tabs = document.getElementById('sizing-tabs');
+  if (tabs) {
+    tabs.innerHTML = [['model', 'Model ₹1 Cr'], ['amount', 'Your Amount']].map(([m, label]) =>
+      `<button class="layer-tab-btn ${sizing.mode === m ? 'active' : ''}"
+         onclick="setSizingMode('${m}')">${label}</button>`).join('');
+  }
+  const sub = document.getElementById('sizing-sub');
+  if (!sub) return;
+  if (sizing.mode === 'model') {
+    sub.textContent = 'Showing the engine\'s own book, sized against ₹1 crore — share rounding is immaterial at that size. '
+      + 'Switch to Your Amount to re-derive every statistic from what your money could actually buy.';
+  } else {
+    const r = run();
+    const over = r.overshoot ? ` Largest month needed ${pct(r.overshoot, 1)} more than the capital on hand at the time.` : '';
+    sub.textContent = `Every statistic below is restated for ${money(sizing.amount)}: each month's book re-sized into whole `
+      + `shares (minimum 1 of each), and only what that rounding changed is carried onto the published month. `
+      + `Capital compounds, so the effect fades as the book grows — at a large enough amount the numbers converge on the model's.${over}`;
+  }
 }
 
 /* ── TAB DISPATCH ────────────────────────────── */
@@ -292,6 +514,18 @@ function renderOverview() {
     { label: 'Volatility', value: pct(r.vol, 2), color: 'var(--gold)', sub: `Beta ${num(r.beta)}` },
     { label: 'Win Rate', value: pct(r.win_rate, 1), color: 'var(--emerald)', sub: `${r.months} months` }
   ];
+  if (r.sized) {
+    kpis.push({
+      label: `${money(sizing.amount)} would be`, value: money(r.final_value),
+      color: 'var(--cyan)', sub: `${spct(r.total_return, 1)} over ${r.months} months`
+    });
+    const model = M.runs[`${state.universe}_${state.variant}`];
+    kpis.push({
+      label: 'vs Model Book', value: spct(r.cagr - model.cagr, 2),
+      color: r.cagr >= model.cagr ? 'var(--emerald)' : 'var(--rose)',
+      sub: `model CAGR ${pct(model.cagr, 2)}`
+    });
+  }
   document.getElementById('kpi-row').innerHTML = kpis.map(k => `
     <div class="kpi-card" style="--accent:${k.color}">
       <span class="kpi-label">${k.label}</span>
@@ -460,10 +694,11 @@ window.setHeatVariant = setHeatVariant;
 
 function renderHeatmap(variant) {
   const grid = {};
-  mon(state.universe, variant).forEach(r => {
-    const m = String(r.trade_month), yr = m.slice(0, 4), mo = +m.slice(5, 7) - 1;
+  const rets = portRets(state.universe, variant);
+  months().forEach((m, i) => {
+    const yr = m.slice(0, 4), mo = +m.slice(5, 7) - 1;
     if (!grid[yr]) grid[yr] = new Array(12).fill(null);
-    grid[yr][mo] = +(r.port_ret * 100).toFixed(2);
+    grid[yr][mo] = +(rets[i] * 100).toFixed(2);
   });
 
   // The live month gets its own cell — shown, but kept out of the year total
@@ -1245,6 +1480,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   renderVariantTabs();
+  renderSizingBar();
   renderHeader();
   renderTab('overview');
 });

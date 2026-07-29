@@ -82,6 +82,26 @@
       </div>
     </div>
 
+    <!-- GLOBAL PORTFOLIO SIZE -->
+    <div class="glass-card" style="margin-bottom:1.25rem;padding:.75rem 1rem">
+      <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.75rem">
+        <div style="flex:1 1 320px">
+          <h3 class="card-title" style="font-size:.8rem">Portfolio Size</h3>
+          <span class="card-sub" id="sizing-sub"></span>
+        </div>
+        <div style="display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:.4rem">
+            <span class="mono" style="color:var(--slate)">₹</span>
+            <input id="global-amt" type="number" min="1000" step="10000" value="100000"
+              oninput="setAmount(this.value)"
+              style="width:140px;background:rgba(255,255,255,.05);border:1px solid var(--border);border-radius:.4rem;
+                     color:var(--cyan);font-family:var(--mono);font-weight:700;padding:.35rem .5rem;font-size:.85rem">
+          </div>
+          <div class="layer-tabs" id="sizing-tabs"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- ═══════════════════════════════════════ -->
     <!-- TAB: OVERVIEW                            -->
     <!-- ═══════════════════════════════════════ -->
@@ -424,8 +444,8 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/particles.js@2.0.0/particles.min.js"></script>
   <!-- Data must load before app -->
-  <script src="data.js?v=3"></script>
-  <script src="holdings.js?v=3"></script>
-  <script src="app.js?v=3"></script>
+  <script src="data.js?v=4"></script>
+  <script src="holdings.js?v=4"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>
