@@ -100,6 +100,33 @@ a large enough amount the numbers converge back on the published ones.
 Measured on the Nifty 500 overlay, the mean monthly deviation from the model is
 0.48% at ₹1 lakh, 0.019% at ₹25 lakh and 0.0008% at ₹5 crore.
 
+## Which price is shown
+
+The workbooks record three prices per holding and only one of them is a price
+anyone can transact at:
+
+| column | what it is |
+|---|---|
+| `Buy Price` | the **open of the trade month** — what the book was entered at |
+| `Sell Price` | the close of the trade month, or the latest close for the live month |
+| `Avg Price` | the engine's **carried cost basis** |
+
+The site prices and sizes everything off the **Buy Price**. The average cost is
+not a market price: the engine has held GOLDBEES since May 2022 and averages its
+cost across years of rebalancing, so by July 2026 that column reads ₹61.71
+against a market price of ₹115.36 — and SILVERBEES ₹121.90 against ₹212.50.
+Sizing quantities off it would have roughly doubled every long-held position.
+Across the 15,178 priced rows on this site, 8,616 sit more than 5% away from
+their cost basis, so this is not an edge case.
+
+The cost basis is still carried in the data as `a` and surfaced in a tooltip on
+the price cell, because it is what makes a position's contribution differ from
+weight × return.
+
+Every displayed price is verified against the month-open in the underlying price
+CSVs, per universe (the three stock folders carry different corporate-action
+adjustments for the same name).
+
 ## Sizing for a real amount
 
 The model book is sized against ₹1 crore, where rounding a position to whole

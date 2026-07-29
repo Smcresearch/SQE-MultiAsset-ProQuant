@@ -889,7 +889,7 @@ function openHeatModal(monthStr) {
             <th title="What that weight actually becomes once your amount is rounded to whole shares, with a one-share floor.">Actual</th>
             <th title="Price move across the trade month: open to close.">Return</th>
             <th title="Your achieved weight × the stock's return — its contribution to the return on YOUR amount.">Contrib</th>
-            <th title="The position's average cost — the basis quantities are sized against.">Avg Buy Price</th>
+            <th title="Execution price for this month — the open of the trade month, what the book was entered at. Quantities are sized against this.">Buy Price</th>
             <th>Qty</th><th>Amount</th>
           </tr></thead>
           <tbody>
@@ -901,7 +901,8 @@ function openHeatModal(monthStr) {
               <td class="mono" id="iw${i}">—</td>
               <td class="mono ${col(h.r)}">${sgnPct(h.r)}</td>
               <td class="mono" id="ic${i}">—</td>
-              <td class="mono">${h.p != null ? money(h.p) : '—'}</td>
+              <td class="mono"${h.a != null && h.p != null && Math.abs(h.a / h.p - 1) > 0.02
+                  ? ` title="Entered at ${money(h.p)}. The engine's carried cost basis is ${money(h.a)} — it has held this position across earlier months, which is why its contribution is not simply weight × return."` : ''}>${h.p != null ? money(h.p) : '—'}</td>
               <td class="mono text-cyan" id="iq${i}" style="font-weight:700">—</td>
               <td class="mono text-emerald" id="ia${i}">—</td>
             </tr>`).join('')}
@@ -1420,7 +1421,8 @@ function liveBookRows() {
   snap.forEach(h => { byS[h.s] = h; });
   return b.holdings.map(h => {
     const s = byS[h.symbol] || {};
-    return { ...h, s: h.symbol, w: h.weight * 100, p: s.p ?? null, r: s.r ?? null };
+    // p = entry price for the live month (its open); x = latest traded price.
+    return { ...h, s: h.symbol, w: h.weight * 100, p: s.p ?? null, x: s.x ?? null, r: s.r ?? null };
   });
 }
 
@@ -1438,6 +1440,7 @@ function renderHoldings() {
       <td class="mono ${h.r == null ? 'text-muted' : (h.r >= 0 ? 'text-emerald' : 'text-rose')}">${h.r == null ? '—' : (h.r >= 0 ? '+' : '') + h.r.toFixed(2) + '%'}</td>
       <td class="mono" id="pc${i}">—</td>
       <td class="mono">${h.p != null ? money(h.p) : '—'}</td>
+      <td class="mono text-cyan">${h.x != null ? money(h.x) : '—'}</td>
       <td class="mono text-cyan" id="pq${i}" style="font-weight:700">—</td>
       <td class="mono text-emerald" id="pa${i}">—</td>
     </tr>`).join('');
