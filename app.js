@@ -1146,7 +1146,7 @@ function renderRisk() {
 }
 
 /* ══════════════════════════════════════════════
-   VARIANT METRICS
+   PERFORMANCE METRICS
 ══════════════════════════════════════════════ */
 function renderMetrics() {
   document.getElementById('variantTableBody').innerHTML = VKEYS.map(v => {
