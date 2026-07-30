@@ -7,7 +7,7 @@
   <meta name="description" content="Institutional-grade multi-asset portfolio analytics: SQE equity strategy with a fixed GOLDBEES / SILVERBEES bullion sleeve, across Nifty 50, Nifty 500 and All Indices.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Roboto+Mono:wght@400;500;600;700&display=swap">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=8">
 </head>
 <body>
 
@@ -32,7 +32,15 @@
     <!-- HEADER -->
     <header class="site-header">
       <div class="header-left">
-        <div class="brand-badge">SQE</div>
+        <!-- SMC lockup. The wordmark is dark, so on the dark theme it sits on a
+             white chip; in light mode the chip disappears. If the asset is
+             missing the SQE badge takes over, so the header never breaks. -->
+        <div class="brand-logo-chip" id="brand-logo-chip">
+          <img id="brand-logo" src="assets/smc-logo.png" alt="SMC — Moneywise. Be wise."
+               onerror="document.getElementById('brand-logo-chip').style.display='none';
+                        document.getElementById('brand-fallback').style.display='flex';">
+        </div>
+        <div class="brand-badge" id="brand-fallback" style="display:none">SQE</div>
         <div>
           <h1 class="brand-title">SQE MultiAsset ProQuant
             <span style="font-size:0.7rem; vertical-align:middle; opacity:0.6">Equity + Gold + Silver</span>
@@ -445,8 +453,8 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/particles.js@2.0.0/particles.min.js"></script>
   <!-- Data must load before app -->
-  <script src="data.js?v=7"></script>
-  <script src="holdings.js?v=7"></script>
-  <script src="app.js?v=7"></script>
+  <script src="data.js?v=8"></script>
+  <script src="holdings.js?v=8"></script>
+  <script src="app.js?v=8"></script>
 </body>
 </html>

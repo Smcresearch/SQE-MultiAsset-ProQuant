@@ -248,6 +248,30 @@ body::before {
 
 .header-left { display: flex; align-items: center; gap: 1.25rem; }
 
+/* SMC lockup. The wordmark and tagline are near-black, so on the dark theme the
+   logo needs a light plate to read against the background; in light mode the
+   plate is unnecessary and would look like a sticker, so it is dropped. */
+.brand-logo-chip {
+  background: #fff;
+  border-radius: .75rem;
+  padding: .5rem .8rem;
+  display: flex; align-items: center;
+  box-shadow: 0 2px 14px rgba(0, 0, 0, .3);
+  flex-shrink: 0;
+}
+.brand-logo-chip img {
+  display: block;
+  height: 46px; width: auto; max-width: 190px;
+}
+[data-theme="light"] .brand-logo-chip {
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+@media (max-width: 640px) {
+  .brand-logo-chip img { height: 36px; max-width: 150px; }
+}
+
 .brand-badge {
   width: 52px; height: 52px;
   background: linear-gradient(135deg, var(--cyan), var(--violet));
