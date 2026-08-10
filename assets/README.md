@@ -1,21 +1,21 @@
 # assets
 
-## `smc-logo.png` (or `.svg`)
+## `smc-logo.webp`
 
-The SMC lockup shown in the dashboard header. **Not committed yet** — drop the
-official file here with exactly this name and the header picks it up; until then
-the header falls back to the plain `SQE` badge, so nothing renders broken.
+The SMC lockup shown in the dashboard header — the official horizontal lockup
+with the "moneywise. be wise." tagline, 2886×1001. Same asset as `smc_logo.webp`
+in the SQE and SQE-ProQuant dashboards; keep the three in sync when it changes.
+If the file goes missing the header falls back to the plain `SQE` badge, so
+nothing renders broken.
 
-Notes for whoever adds it:
+Notes for whoever replaces it:
 
-- **SVG is preferred** over PNG — the header scales it and the tagline text goes
-  soft at small raster sizes. If using PNG, supply it at 3× the display size
-  (roughly 570px wide) with a transparent background.
-- The wordmark and tagline are near-black, so on the dark theme the logo sits on
-  a white plate (`.brand-logo-chip` in `style.css`). If a **white / knockout
-  variant** exists, that is the better option: drop it in as
-  `smc-logo-light.png`, remove the plate from `.brand-logo-chip`, and swap the
-  two files by theme.
+- The background is **opaque white, not transparent**, and the wordmark is
+  near-black. On the dark theme it therefore sits on a white plate
+  (`.brand-logo-chip` in `style.css`) that the asset blends into; in light mode
+  the plate is dropped. An **SVG or a transparent knockout variant** would be
+  better — with a white variant, drop it in as `smc-logo-light.webp`, remove the
+  plate, and swap the two files by theme.
 - The header sizes it to 46px tall, max 190px wide (36 / 150 on narrow screens).
-  A horizontal lockup without the tagline reads better at that height; the full
-  stacked lockup with "Moneywise. Be wise." will render the tagline very small.
+  The tagline renders small at that height; a lockup without it would read
+  better if one is ever supplied.

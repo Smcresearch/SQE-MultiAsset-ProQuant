@@ -248,9 +248,9 @@ body::before {
 
 .header-left { display: flex; align-items: center; gap: 1.25rem; }
 
-/* SMC lockup. The wordmark and tagline are near-black, so on the dark theme the
-   logo needs a light plate to read against the background; in light mode the
-   plate is unnecessary and would look like a sticker, so it is dropped. */
+/* SMC lockup. The wordmark and tagline are near-black on an opaque white
+   background, so the logo always needs the light plate for the asset to blend
+   into — only the dark-theme glow comes off in light mode. */
 .brand-logo-chip {
   background: #fff;
   border-radius: .75rem;
@@ -264,9 +264,7 @@ body::before {
   height: 46px; width: auto; max-width: 190px;
 }
 [data-theme="light"] .brand-logo-chip {
-  background: transparent;
-  box-shadow: none;
-  padding: 0;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, .08);
 }
 @media (max-width: 640px) {
   .brand-logo-chip img { height: 36px; max-width: 150px; }
