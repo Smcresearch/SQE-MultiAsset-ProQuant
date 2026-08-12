@@ -138,32 +138,6 @@ body::before {
   position: fixed; inset: 0; z-index: 0; pointer-events: none;
 }
 
-/* ── REGIME BADGE ────────────────────────────── */
-.regime-badge {
-  display: flex; align-items: center; gap: 0.5rem;
-  padding: 0.4rem 1rem;
-  border-radius: 2rem;
-  font-size: 0.75rem; font-weight: 700;
-  text-transform: uppercase; letter-spacing: 0.05em;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid var(--border);
-  margin-right: 1.5rem;
-  transition: var(--trans);
-}
-.regime-dot { width: 10px; height: 10px; border-radius: 50%; }
-.regime-badge.bull { color: var(--emerald); border-color: rgba(16,185,129,0.3); background: rgba(16,185,129,0.05); }
-.regime-badge.bull .regime-dot { background: var(--emerald); box-shadow: 0 0 12px var(--emerald); animation: pulse 2s infinite; }
-.regime-badge.bias { color: var(--cyan); border-color: rgba(34,211,238,0.3); }
-.regime-badge.bias .regime-dot { background: var(--cyan); }
-.regime-badge.bear { color: var(--rose); border-color: rgba(244,63,94,0.3); background: rgba(244,63,94,0.05); }
-.regime-badge.bear .regime-dot { background: var(--rose); box-shadow: 0 0 12px var(--rose); }
-
-@keyframes pulse {
-  0% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.5; transform: scale(1.3); }
-  100% { opacity: 1; transform: scale(1); }
-}
-
 /* ── EXPORT BUTTON ────────────────────────────── */
 .export-btn {
   background: var(--bg-2);
@@ -187,7 +161,7 @@ body::before {
 @media print {
   body { background: white !important; color: black !important; }
   .app-container { max-width: 100% !important; padding: 0 !important; }
-  .main-nav, .theme-toggle, .universe-tabs, .univ-switch, .export-btn, .chart-controls, #particles-js, .regime-badge { display: none !important; }
+  .main-nav, .theme-toggle, .universe-tabs, .univ-switch, .export-btn, .chart-controls, #particles-js { display: none !important; }
   .glass-card { background: white !important; border: 1px solid #ddd !important; box-shadow: none !important; break-inside: avoid; margin-bottom: 2rem !important; }
   .kpi-card { border: 1px solid #ddd !important; background: #fcfcfc !important; color: black !important; }
   .tab-pane { display: block !important; opacity: 1 !important; visibility: visible !important; }

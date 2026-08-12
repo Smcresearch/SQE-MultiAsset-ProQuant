@@ -626,8 +626,14 @@
     win.document.close();
   }
 
-  /* Deliberately NOT overriding exportReport() the way the SQE dashboards do.
-     Here that button downloads the monthly-returns CSV, which is its own
-     feature worth keeping — the factsheet gets its own button in the header. */
+  /* One export button, same as the SQE / SQE-ProQuant dashboards: it hands the
+     client the factsheet. index.html calls exportReport() via onclick, which
+     resolves off window at click time, so overriding here is enough.
+
+     app.js still defines exportReport() as the monthly-returns CSV writer. It
+     is left in place rather than deleted — it is the only thing that can
+     reproduce the on-screen series in a spreadsheet, and restoring it is one
+     line here if it is ever wanted back. */
+  window.exportReport = exportFactsheet;
   window.exportFactsheet = exportFactsheet;
 })();

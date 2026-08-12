@@ -451,17 +451,9 @@ function renderHeader() {
   document.getElementById('backtest-period').textContent =
     `Backtest: ${fmtMonth(w.first)} – ${fmtMonth(w.last)} · ${w.months} completed months · window starts at SILVERBEES inception (May 2022) · all metrics computed over this period${sizeNote}${liveNote}`;
 
-  const badge = document.getElementById('regime-badge');
-  const baseRun = M.runs[`${state.universe}_base`];
-  const cagrLift = r.cagr - baseRun.cagr;
-  const ddLift = r.max_dd - baseRun.max_dd;   // positive = shallower drawdown
-  let label, cls;
-  if (state.variant === 'base') { label = 'Equity Only — no bullion'; cls = ''; }
-  else if (ddLift > 0 && cagrLift > 0) { label = 'Bullion: return up, drawdown down'; cls = 'bull'; }
-  else if (ddLift > 0) { label = 'Bullion: drawdown reduced'; cls = 'bias'; }
-  else { label = 'Bullion: risk-neutral'; cls = ''; }
-  badge.innerHTML = `<span class="regime-dot ${cls}"></span> ${label}`;
-  badge.className = `regime-badge ${cls}`;
+  /* The header regime badge ("Bullion: return up, drawdown down") was removed:
+     it editorialised the sleeve comparison in the masthead, where the same
+     figures are already reported plainly in the metric tiles below. */
 
   const sub = document.getElementById('sleeve-sub');
   if (state.variant === 'base') {
