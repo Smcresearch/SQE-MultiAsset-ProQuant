@@ -14,7 +14,7 @@ const BENCH_COLOR = '#8b5cf6';
 const UNIV_LABEL = { N50: 'Nifty 50', N500: 'Nifty 500', T759: 'All Indices' };
 
 let state = {
-  universe: 'N500',
+  universe: 'T759',
   variant: 'goldsilver',
   tab: 'overview',
   heatVariant: 'goldsilver',

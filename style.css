@@ -447,11 +447,12 @@ body::before {
 
 .kpi-value {
   font-family: var(--mono);
-  font-size: 1.9rem;
+  font-size: clamp(1.1rem, 4vw, 1.9rem);
   font-weight: 700;
-  line-height: 1;
+  line-height: 1.1;
   animation: countUp .6s ease-out both;
   color: var(--cyan);
+  overflow-wrap: anywhere;
 }
 
 .kpi-delta {
