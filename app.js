@@ -11,7 +11,7 @@ const VARIANTS = {
 };
 const VKEYS = Object.keys(VARIANTS);
 const BENCH_COLOR = '#8b5cf6';
-const UNIV_LABEL = { N50: 'Nifty 50', N500: 'Nifty 500', T759: 'All Indices' };
+const UNIV_LABEL = { N50: 'Nifty 50', N500: 'Nifty 500', T759: 'All Indices', HQ: 'High Quality' };
 
 let state = {
   universe: 'T759',
@@ -254,7 +254,7 @@ const fmtMonth = m => MON[+String(m).slice(5, 7) - 1] + ' ' + String(m).slice(0,
 /* ── GLOBAL CONTROLS ─────────────────────────── */
 function switchUniverse(u) {
   state.universe = u;
-  ['N50', 'N500', 'T759'].forEach(k =>
+  ['N50', 'N500', 'T759', 'HQ'].forEach(k =>
     document.getElementById('btn-' + k)?.classList.toggle('active', k === u));
   renderHeader();
   renderTab(state.tab);
