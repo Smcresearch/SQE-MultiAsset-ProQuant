@@ -567,6 +567,7 @@ function renderOverview() {
   });
 
   renderLiveStrip();
+  renderPeriods();
   renderSectorPie('overviewSectorPie');
   renderLift();
 
@@ -640,6 +641,97 @@ function renderLiveStrip() {
         ${rows.map(line).join('')}
         <tr><td colspan="3" style="height:.4rem;border:none"></td></tr>
         ${assets.map(line).join('')}
+      </tbody>
+    </table>`;
+}
+
+/* Trailing returns over the standard periods.
+   Built from M.monthly[run], which holds only COMPLETED months -- the same rule
+   the rest of the site follows, and the reason the in-progress month is carried
+   separately as "Current" rather than folded into 3M / 6M / 1Y. Quarter- and
+   year-to-date are likewise the completed months of the current quarter/year,
+   so no figure in this table is ever a part-month. */
+function compound(rows, field) {
+  if (!rows || !rows.length) return null;
+  let g = 1;
+  for (const r of rows) {
+    const v = r[field];
+    if (v == null || isNaN(v)) return null;
+    g *= (1 + v);
+  }
+  return g - 1;
+}
+
+function periodRows(runKey) {
+  const all = (M.monthly && M.monthly[runKey]) || [];
+  if (!all.length) return [];
+  const last = all[all.length - 1].trade_month;           // e.g. '2026-08'
+  const [ly, lm] = last.split('-').map(Number);
+  const qStart = ly + '-' + String(Math.floor((lm - 1) / 3) * 3 + 1).padStart(2, '0');
+  const tail = n => all.slice(-n);
+  const since = pfx => all.filter(r => r.trade_month >= pfx);
+
+  const defs = [
+    ['3 Months', tail(3), 3],
+    ['6 Months', tail(6), 6],
+    ['Quarter to date', since(qStart), null],
+    ['Year to date', since(ly + '-01'), null],
+    ['1 Year', tail(12), 12],
+    ['Since inception', all, null]
+  ];
+  // A window longer than the available history would otherwise report a shorter
+  // span as though it were the full period, so those rows are dropped rather
+  // than mislabelled.
+  return defs
+    .filter(([, rows, need]) => rows.length && (need == null || all.length >= need))
+    .map(([label, rows]) => ({
+      label, months: rows.length,
+      val: compound(rows, 'port_ret'),
+      bench: compound(rows, 'bench_ret')
+    }));
+}
+
+function renderPeriods() {
+  const card = document.getElementById('periods-card');
+  if (!card) return;
+  const rows = periodRows(`${state.universe}_${state.variant}`);
+  if (!rows.length) { card.style.display = 'none'; return; }
+  card.style.display = '';
+
+  const r = run();
+  const lr = liveRow();
+  document.getElementById('periods-title').textContent =
+    `Trailing Returns — ${VARIANTS[state.variant].label}`;
+  document.getElementById('periods-sub').textContent =
+    `${r.universe_name} · compounded over completed months only, through ` +
+    `${fmtMonth(M.meta.window.last)}. The in-progress month is shown separately ` +
+    `as Current and is not part of any other row.`;
+
+  const line = (label, sub, val, bench, hl) => {
+    const vs = (val != null && bench != null) ? val - bench : null;
+    return `
+    <tr${hl ? ' style="background:rgba(34,211,238,.06)"' : ''}>
+      <td>${label}${sub ? ` <span class="text-muted" style="font-size:.7rem">${sub}</span>` : ''}</td>
+      <td class="mono ${tone(val)}" style="font-weight:600">${val == null ? '—' : spct(val)}</td>
+      <td class="mono ${tone(bench)}">${bench == null ? '—' : spct(bench)}</td>
+      <td class="mono ${vs == null ? '' : tone(vs)}" style="font-weight:600">${vs == null ? '—' : spct(vs)}</td>
+    </tr>`;
+  };
+
+  const current = lr
+    ? line(`Current — ${fmtMonth(M.live.month)}`, 'month to date, not final',
+           lr.port_ret, lr.bench_ret, true)
+    : '';
+
+  document.getElementById('periods-container').innerHTML = `
+    <table class="data-table">
+      <thead><tr>
+        <th>Period</th><th>Return</th><th>${r.bench_name}</th><th>vs Benchmark</th>
+      </tr></thead>
+      <tbody>
+        ${current}
+        ${current ? '<tr><td colspan="4" style="height:.4rem;border:none"></td></tr>' : ''}
+        ${rows.map(x => line(x.label, `${x.months} mo`, x.val, x.bench, false)).join('')}
       </tbody>
     </table>`;
 }
