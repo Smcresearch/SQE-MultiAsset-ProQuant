@@ -187,6 +187,29 @@ function run(u = state.universe, v = state.variant) {
 function mon(u = state.universe, v = state.variant) { return M.monthly[`${u}_${v}`]; }
 function months(u = state.universe) { return mon(u, 'base').map(r => r.trade_month); }
 function benchRets(u = state.universe) { return mon(u, 'base').map(r => r.bench_ret); }
+
+/* NSE Multi Asset benchmarks (data.js `ma_bench`, from update_ma_bench.py), shown
+   BESIDE the universe's own benchmark, which stays the one behind alpha/beta.
+   A benchmark missing any of the window's months is left out entirely. */
+const MA_COLORS = { MA1: '#a78bfa', MA2: '#f472b6' };
+function maList(u = state.universe) {
+  if (!M.ma_bench) return [];
+  return Object.keys(M.ma_bench).filter(k => months(u).every(m => M.ma_bench[k].rets[m] != null));
+}
+const maName = k => M.ma_bench[k].name;
+const maShort = k => maName(k).replace('NSE Multi Asset ', 'MA ');
+function maRets(k, u = state.universe) { return months(u).map(m => M.ma_bench[k].rets[m]); }
+function maLive(k) {
+  const l = M.ma_bench?.[k]?.live;
+  return l && M.live && l.month === M.live.month ? l.ret : null;
+}
+const maLines = fn => maList().map(k => ({
+  label: maName(k), data: fn(maRets(k)), borderColor: MA_COLORS[k],
+  borderDash: [2, 3], borderWidth: 1.5, pointRadius: 0, tension: 0.25, fill: false
+}));
+function maMetrics(k, u = state.universe, v = state.variant) {
+  return computeMetrics(mon(u, v).map(r => r.port_ret), maRets(k, u), mon(u, 'base').map(r => r.rf));
+}
 function portRets(u = state.universe, v = state.variant) {
   return sized(u, v) ? amountSeries(u, v).rets : mon(u, v).map(r => r.port_ret);
 }
@@ -319,14 +342,18 @@ function closeModal() { document.getElementById('hmModal').classList.remove('ope
    the benchmark — so anything on screen can be checked in a spreadsheet. */
 function exportReport() {
   const u = state.universe, ms = months(u), b = benchRets(u);
-  const head = ['Month', ...VKEYS.map(v => VARIANTS[v].label), M.runs[`${u}_base`].bench_name, 'Status'];
+  const mas = maList(u);
+  const head = ['Month', ...VKEYS.map(v => VARIANTS[v].label), M.runs[`${u}_base`].bench_name,
+                ...mas.map(maName), 'Status'];
   const rows = ms.map((m, i) =>
-    [m, ...VKEYS.map(v => (portRets(u, v)[i] * 100).toFixed(4)), (b[i] * 100).toFixed(4), 'complete']);
+    [m, ...VKEYS.map(v => (portRets(u, v)[i] * 100).toFixed(4)), (b[i] * 100).toFixed(4),
+     ...mas.map(k => (M.ma_bench[k].rets[m] * 100).toFixed(4)), 'complete']);
   if (M.live) {
     const lb = M.live.runs[`${u}_base`].bench_ret;
     rows.push([M.live.month,
       ...VKEYS.map(v => (M.live.runs[`${u}_${v}`].port_ret * 100).toFixed(4)),
-      (lb * 100).toFixed(4), `live month-to-date as of ${M.live.as_of} — excluded from all statistics`]);
+      (lb * 100).toFixed(4), ...mas.map(k => maLive(k) == null ? '' : (maLive(k) * 100).toFixed(4)),
+      `live month-to-date as of ${M.live.as_of} — excluded from all statistics`]);
   }
   const csv = [head, ...rows].map(r => r.join(',')).join('\n');
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
@@ -559,7 +586,8 @@ function renderOverview() {
       {
         label: r.bench_name, data: growth(benchRets()),
         borderColor: BENCH_COLOR, borderDash: [6, 4], borderWidth: 1.5, tension: 0.25, fill: false
-      }
+      },
+      ...maLines(growth)
     ]
   }, {
     plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ₹${c.parsed.y.toFixed(2)}` } } },
@@ -577,6 +605,10 @@ function renderOverview() {
     y: M.runs[`${state.universe}_${v}`].cagr * 100
   }));
   pts.push({ label: r.bench_name, color: BENCH_COLOR, x: r.bench_vol * 100, y: r.bench_cagr * 100 });
+  maList().forEach(k => {
+    const m = maMetrics(k);
+    pts.push({ label: maName(k), color: MA_COLORS[k], x: m.bench_vol * 100, y: m.bench_cagr * 100 });
+  });
   pts.push({ label: 'GOLDBEES', color: '#f4b942', x: M.bullion_bh.GOLDBEES.vol * 100, y: M.bullion_bh.GOLDBEES.cagr * 100 });
   pts.push({ label: 'SILVERBEES', color: '#9fb3c8', x: M.bullion_bh.SILVERBEES.vol * 100, y: M.bullion_bh.SILVERBEES.cagr * 100 });
 
@@ -624,7 +656,8 @@ function renderLiveStrip() {
   const assets = [
     { label: run().bench_name, color: BENCH_COLOR, val: bench, vs: null },
     { label: 'GOLDBEES', color: '#f4b942', val: M.live.gold, vs: null },
-    { label: 'SILVERBEES', color: '#9fb3c8', val: M.live.silver, vs: null }
+    { label: 'SILVERBEES', color: '#9fb3c8', val: M.live.silver, vs: null },
+    ...maList().map(k => ({ label: maName(k), color: MA_COLORS[k], val: maLive(k), vs: null }))
   ];
 
   const line = r => `
@@ -687,7 +720,9 @@ function periodRows(runKey) {
     .map(([label, rows]) => ({
       label, months: rows.length,
       val: compound(rows, 'port_ret'),
-      bench: compound(rows, 'bench_ret')
+      bench: compound(rows, 'bench_ret'),
+      ma: Object.fromEntries(maList().map(k => [k,
+        rows.reduce((g, x) => g * (1 + M.ma_bench[k].rets[x.trade_month]), 1) - 1]))
     }));
 }
 
@@ -707,7 +742,9 @@ function renderPeriods() {
     `${fmtMonth(M.meta.window.last)}. The in-progress month is shown separately ` +
     `as Current and is not part of any other row.`;
 
-  const line = (label, sub, val, bench, hl) => {
+  const mas = maList();
+  // 'vs MA …' = the sleeve's return less that index's return over the same period.
+  const line = (label, sub, val, bench, hl, ma = {}) => {
     const vs = (val != null && bench != null) ? val - bench : null;
     return `
     <tr${hl ? ' style="background:rgba(34,211,238,.06)"' : ''}>
@@ -715,25 +752,32 @@ function renderPeriods() {
       <td class="mono ${tone(val)}" style="font-weight:600">${val == null ? '—' : spct(val)}</td>
       <td class="mono ${tone(bench)}">${bench == null ? '—' : spct(bench)}</td>
       <td class="mono ${vs == null ? '' : tone(vs)}" style="font-weight:600">${vs == null ? '—' : spct(vs)}</td>
+      ${mas.map(k => {
+        const m = ma[k], d = (val != null && m != null) ? val - m : null;
+        return `<td class="mono ${tone(m)}">${m == null ? '—' : spct(m)}</td>
+      <td class="mono ${d == null ? '' : tone(d)}" style="font-weight:600">${d == null ? '—' : spct(d)}</td>`;
+      }).join('')}
     </tr>`;
   };
 
   const current = lr
     ? line(`Current — ${fmtMonth(M.live.month)}`, 'month to date, not final',
-           lr.port_ret, lr.bench_ret, true)
+           lr.port_ret, lr.bench_ret, true, Object.fromEntries(mas.map(k => [k, maLive(k)])))
     : '';
 
   document.getElementById('periods-container').innerHTML = `
-    <table class="data-table">
+    <div style="overflow-x:auto"><table class="data-table">
       <thead><tr>
         <th>Period</th><th>Return</th><th>${r.bench_name}</th><th>vs Benchmark</th>
+        ${mas.map(k => `<th style="color:${MA_COLORS[k]}">${maName(k)}</th>
+        <th style="color:${MA_COLORS[k]}">vs ${maShort(k)}</th>`).join('')}
       </tr></thead>
       <tbody>
         ${current}
-        ${current ? '<tr><td colspan="4" style="height:.4rem;border:none"></td></tr>' : ''}
-        ${rows.map(x => line(x.label, `${x.months} mo`, x.val, x.bench, false)).join('')}
+        ${current ? `<tr><td colspan="${4 + 2 * mas.length}" style="height:.4rem;border:none"></td></tr>` : ''}
+        ${rows.map(x => line(x.label, `${x.months} mo`, x.val, x.bench, false, x.ma)).join('')}
       </tbody>
-    </table>`;
+    </table></div>`;
 }
 
 /* Each overlay measured against the Equity Only control. */
@@ -895,7 +939,7 @@ function openHeatModal(monthStr) {
 
   /* ── month KPI strip ── */
   const kpiHtml = `
-    <div class="modal-row" style="background:rgba(34,211,238,0.05);border-radius:.5rem;padding:.75rem;grid-template-columns:repeat(4,1fr)">
+    <div class="modal-row" style="background:rgba(34,211,238,0.05);border-radius:.5rem;padding:.75rem;grid-template-columns:repeat(3,1fr)">
       <div>
         <div class="modal-metric">Nifty 50</div>
         <div class="modal-val" style="color:#94a3b8">${spct(benchIn('N50', monthStr))}</div>
@@ -904,6 +948,10 @@ function openHeatModal(monthStr) {
         <div class="modal-metric">Nifty 500</div>
         <div class="modal-val" style="color:#94a3b8">${spct(benchIn('N500', monthStr))}</div>
       </div>
+      ${M.ma_bench ? Object.keys(M.ma_bench).map(k => `<div>
+        <div class="modal-metric">${maName(k)}</div>
+        <div class="modal-val" style="color:${MA_COLORS[k]}">${spct(M.ma_bench[k].rets[monthStr] ?? (isLive ? maLive(k) : null))}</div>
+      </div>`).join('') : ''}
       <div>
         <div class="modal-metric">Portfolio Beta</div>
         <div class="modal-val" style="color:var(--gold)">${num(meta.port_beta)}</div>
@@ -1150,7 +1198,8 @@ function renderRisk() {
       {
         label: run().bench_name, data: growth(benchRets()),
         borderColor: BENCH_COLOR, borderDash: [6, 4], borderWidth: 1.5, tension: 0.25, fill: false
-      }
+      },
+      ...maLines(growth)
     ]
   }, {
     plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ₹${c.parsed.y.toFixed(2)}` } } },
@@ -1169,7 +1218,7 @@ function renderRisk() {
     })).concat([{
       label: run().bench_name, data: underwater(benchRets()),
       borderColor: BENCH_COLOR, borderDash: [6, 4], borderWidth: 1.2, pointRadius: 0, fill: false
-    }])
+    }], maLines(underwater))
   }, {
     plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y.toFixed(2)}%` } } },
     scales: { y: { ticks: { callback: v => v.toFixed(0) + '%' } } }
@@ -1182,7 +1231,8 @@ function renderRisk() {
         borderColor: VARIANTS[state.variant].color, backgroundColor: VARIANTS[state.variant].color + '33',
         borderWidth: 2.5, pointRadius: 0, tension: 0.25, fill: true, spanGaps: false },
       { label: run().bench_name, data: rolling(benchRets()),
-        borderColor: BENCH_COLOR, borderDash: [6, 4], borderWidth: 1.5, pointRadius: 0, tension: 0.25, fill: false }
+        borderColor: BENCH_COLOR, borderDash: [6, 4], borderWidth: 1.5, pointRadius: 0, tension: 0.25, fill: false },
+      ...maLines(rolling)
     ]
   }, {
     plugins: { tooltip: { callbacks: { label: c => `${c.dataset.label}: ${c.parsed.y == null ? '—' : c.parsed.y.toFixed(2) + '%'}` } } },
@@ -1320,7 +1370,14 @@ function renderMetrics() {
     ['Ex-Ante Sharpe (avg)', r => num(r.exante_sharpe_avg), "Engine's forecast at formation"],
     ['Ex-Ante Sortino (avg)', r => num(r.exante_sortino_avg), ''],
     ['Ex-Ante Beta (latest)', r => num(r.exante_beta_current), ''],
-    ['Avg Positions', r => num(r.avg_stocks, 1), 'Names in the book, monthly average']
+    ['Avg Positions', r => num(r.avg_stocks, 1), 'Names in the book, monthly average'],
+    // Each sleeve measured against each NSE Multi Asset index (model book).
+    ...maList().flatMap(k => [
+      [`${maName(k)} CAGR`, (r, v) => pct(maMetrics(k, state.universe, v).bench_cagr), 'Benchmark, same window'],
+      [`Alpha vs ${maShort(k)}`, (r, v) => spct(maMetrics(k, state.universe, v).alpha_ann), 'CAGR less this index CAGR'],
+      [`${maShort(k)} Max DD`, (r, v) => pct(maMetrics(k, state.universe, v).bench_max_dd), ''],
+      [`Beta vs ${maShort(k)}`, (r, v) => num(maMetrics(k, state.universe, v).beta), 'Realised']
+    ])
   ];
 
   document.getElementById('execTable').innerHTML = `
@@ -1329,7 +1386,7 @@ function renderMetrics() {
     <tbody>${rowsSpec.map(([label, fn, note]) => `
       <tr>
         <td>${label}</td>
-        ${VKEYS.map(v => `<td class="mono">${fn(M.runs[`${state.universe}_${v}`])}</td>`).join('')}
+        ${VKEYS.map(v => `<td class="mono">${fn(M.runs[`${state.universe}_${v}`], v)}</td>`).join('')}
         <td class="text-muted" style="font-size:.68rem">${note}</td>
       </tr>`).join('')}</tbody>`;
 
