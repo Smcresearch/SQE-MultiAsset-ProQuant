@@ -191,7 +191,7 @@ function benchRets(u = state.universe) { return mon(u, 'base').map(r => r.bench_
 /* NSE Multi Asset benchmarks (data.js `ma_bench`, from update_ma_bench.py), shown
    BESIDE the universe's own benchmark, which stays the one behind alpha/beta.
    A benchmark missing any of the window's months is left out entirely. */
-const MA_COLORS = { MA1: '#a78bfa', MA2: '#f472b6' };
+const MA_COLORS = { MA1: '#a78bfa', MA2: '#f472b6', BSE500: '#34d399' };
 function maList(u = state.universe) {
   if (!M.ma_bench) return [];
   return Object.keys(M.ma_bench).filter(k => months(u).every(m => M.ma_bench[k].rets[m] != null));
